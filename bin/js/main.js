@@ -1,1255 +1,4 @@
-(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/earcut/src/earcut.js":[function(require,module,exports){
-'use strict';
-
-module.exports = earcut;
-
-function earcut(data, holeIndices, dim) {
-
-    dim = dim || 2;
-
-    var hasHoles = holeIndices && holeIndices.length,
-        outerLen = hasHoles ? holeIndices[0] * dim : data.length,
-        outerNode = linkedList(data, 0, outerLen, dim, true),
-        triangles = [];
-
-    if (!outerNode) return triangles;
-
-    var minX, minY, maxX, maxY, x, y, size;
-
-    if (hasHoles) outerNode = eliminateHoles(data, holeIndices, outerNode, dim);
-
-    // if the shape is not too simple, we'll use z-order curve hash later; calculate polygon bbox
-    if (data.length > 80 * dim) {
-        minX = maxX = data[0];
-        minY = maxY = data[1];
-
-        for (var i = dim; i < outerLen; i += dim) {
-            x = data[i];
-            y = data[i + 1];
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
-        }
-
-        // minX, minY and size are later used to transform coords into integers for z-order calculation
-        size = Math.max(maxX - minX, maxY - minY);
-    }
-
-    earcutLinked(outerNode, triangles, dim, minX, minY, size);
-
-    return triangles;
-}
-
-// create a circular doubly linked list from polygon points in the specified winding order
-function linkedList(data, start, end, dim, clockwise) {
-    var i, last;
-
-    if (clockwise === (signedArea(data, start, end, dim) > 0)) {
-        for (i = start; i < end; i += dim) last = insertNode(i, data[i], data[i + 1], last);
-    } else {
-        for (i = end - dim; i >= start; i -= dim) last = insertNode(i, data[i], data[i + 1], last);
-    }
-
-    if (last && equals(last, last.next)) {
-        removeNode(last);
-        last = last.next;
-    }
-
-    return last;
-}
-
-// eliminate colinear or duplicate points
-function filterPoints(start, end) {
-    if (!start) return start;
-    if (!end) end = start;
-
-    var p = start,
-        again;
-    do {
-        again = false;
-
-        if (!p.steiner && (equals(p, p.next) || area(p.prev, p, p.next) === 0)) {
-            removeNode(p);
-            p = end = p.prev;
-            if (p === p.next) return null;
-            again = true;
-
-        } else {
-            p = p.next;
-        }
-    } while (again || p !== end);
-
-    return end;
-}
-
-// main ear slicing loop which triangulates a polygon (given as a linked list)
-function earcutLinked(ear, triangles, dim, minX, minY, size, pass) {
-    if (!ear) return;
-
-    // interlink polygon nodes in z-order
-    if (!pass && size) indexCurve(ear, minX, minY, size);
-
-    var stop = ear,
-        prev, next;
-
-    // iterate through ears, slicing them one by one
-    while (ear.prev !== ear.next) {
-        prev = ear.prev;
-        next = ear.next;
-
-        if (size ? isEarHashed(ear, minX, minY, size) : isEar(ear)) {
-            // cut off the triangle
-            triangles.push(prev.i / dim);
-            triangles.push(ear.i / dim);
-            triangles.push(next.i / dim);
-
-            removeNode(ear);
-
-            // skipping the next vertice leads to less sliver triangles
-            ear = next.next;
-            stop = next.next;
-
-            continue;
-        }
-
-        ear = next;
-
-        // if we looped through the whole remaining polygon and can't find any more ears
-        if (ear === stop) {
-            // try filtering points and slicing again
-            if (!pass) {
-                earcutLinked(filterPoints(ear), triangles, dim, minX, minY, size, 1);
-
-            // if this didn't work, try curing all small self-intersections locally
-            } else if (pass === 1) {
-                ear = cureLocalIntersections(ear, triangles, dim);
-                earcutLinked(ear, triangles, dim, minX, minY, size, 2);
-
-            // as a last resort, try splitting the remaining polygon into two
-            } else if (pass === 2) {
-                splitEarcut(ear, triangles, dim, minX, minY, size);
-            }
-
-            break;
-        }
-    }
-}
-
-// check whether a polygon node forms a valid ear with adjacent nodes
-function isEar(ear) {
-    var a = ear.prev,
-        b = ear,
-        c = ear.next;
-
-    if (area(a, b, c) >= 0) return false; // reflex, can't be an ear
-
-    // now make sure we don't have other points inside the potential ear
-    var p = ear.next.next;
-
-    while (p !== ear.prev) {
-        if (pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
-            area(p.prev, p, p.next) >= 0) return false;
-        p = p.next;
-    }
-
-    return true;
-}
-
-function isEarHashed(ear, minX, minY, size) {
-    var a = ear.prev,
-        b = ear,
-        c = ear.next;
-
-    if (area(a, b, c) >= 0) return false; // reflex, can't be an ear
-
-    // triangle bbox; min & max are calculated like this for speed
-    var minTX = a.x < b.x ? (a.x < c.x ? a.x : c.x) : (b.x < c.x ? b.x : c.x),
-        minTY = a.y < b.y ? (a.y < c.y ? a.y : c.y) : (b.y < c.y ? b.y : c.y),
-        maxTX = a.x > b.x ? (a.x > c.x ? a.x : c.x) : (b.x > c.x ? b.x : c.x),
-        maxTY = a.y > b.y ? (a.y > c.y ? a.y : c.y) : (b.y > c.y ? b.y : c.y);
-
-    // z-order range for the current triangle bbox;
-    var minZ = zOrder(minTX, minTY, minX, minY, size),
-        maxZ = zOrder(maxTX, maxTY, minX, minY, size);
-
-    // first look for points inside the triangle in increasing z-order
-    var p = ear.nextZ;
-
-    while (p && p.z <= maxZ) {
-        if (p !== ear.prev && p !== ear.next &&
-            pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
-            area(p.prev, p, p.next) >= 0) return false;
-        p = p.nextZ;
-    }
-
-    // then look for points in decreasing z-order
-    p = ear.prevZ;
-
-    while (p && p.z >= minZ) {
-        if (p !== ear.prev && p !== ear.next &&
-            pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
-            area(p.prev, p, p.next) >= 0) return false;
-        p = p.prevZ;
-    }
-
-    return true;
-}
-
-// go through all polygon nodes and cure small local self-intersections
-function cureLocalIntersections(start, triangles, dim) {
-    var p = start;
-    do {
-        var a = p.prev,
-            b = p.next.next;
-
-        if (!equals(a, b) && intersects(a, p, p.next, b) && locallyInside(a, b) && locallyInside(b, a)) {
-
-            triangles.push(a.i / dim);
-            triangles.push(p.i / dim);
-            triangles.push(b.i / dim);
-
-            // remove two nodes involved
-            removeNode(p);
-            removeNode(p.next);
-
-            p = start = b;
-        }
-        p = p.next;
-    } while (p !== start);
-
-    return p;
-}
-
-// try splitting polygon into two and triangulate them independently
-function splitEarcut(start, triangles, dim, minX, minY, size) {
-    // look for a valid diagonal that divides the polygon into two
-    var a = start;
-    do {
-        var b = a.next.next;
-        while (b !== a.prev) {
-            if (a.i !== b.i && isValidDiagonal(a, b)) {
-                // split the polygon in two by the diagonal
-                var c = splitPolygon(a, b);
-
-                // filter colinear points around the cuts
-                a = filterPoints(a, a.next);
-                c = filterPoints(c, c.next);
-
-                // run earcut on each half
-                earcutLinked(a, triangles, dim, minX, minY, size);
-                earcutLinked(c, triangles, dim, minX, minY, size);
-                return;
-            }
-            b = b.next;
-        }
-        a = a.next;
-    } while (a !== start);
-}
-
-// link every hole into the outer loop, producing a single-ring polygon without holes
-function eliminateHoles(data, holeIndices, outerNode, dim) {
-    var queue = [],
-        i, len, start, end, list;
-
-    for (i = 0, len = holeIndices.length; i < len; i++) {
-        start = holeIndices[i] * dim;
-        end = i < len - 1 ? holeIndices[i + 1] * dim : data.length;
-        list = linkedList(data, start, end, dim, false);
-        if (list === list.next) list.steiner = true;
-        queue.push(getLeftmost(list));
-    }
-
-    queue.sort(compareX);
-
-    // process holes from left to right
-    for (i = 0; i < queue.length; i++) {
-        eliminateHole(queue[i], outerNode);
-        outerNode = filterPoints(outerNode, outerNode.next);
-    }
-
-    return outerNode;
-}
-
-function compareX(a, b) {
-    return a.x - b.x;
-}
-
-// find a bridge between vertices that connects hole with an outer ring and and link it
-function eliminateHole(hole, outerNode) {
-    outerNode = findHoleBridge(hole, outerNode);
-    if (outerNode) {
-        var b = splitPolygon(outerNode, hole);
-        filterPoints(b, b.next);
-    }
-}
-
-// David Eberly's algorithm for finding a bridge between hole and outer polygon
-function findHoleBridge(hole, outerNode) {
-    var p = outerNode,
-        hx = hole.x,
-        hy = hole.y,
-        qx = -Infinity,
-        m;
-
-    // find a segment intersected by a ray from the hole's leftmost point to the left;
-    // segment's endpoint with lesser x will be potential connection point
-    do {
-        if (hy <= p.y && hy >= p.next.y) {
-            var x = p.x + (hy - p.y) * (p.next.x - p.x) / (p.next.y - p.y);
-            if (x <= hx && x > qx) {
-                qx = x;
-                if (x === hx) {
-                    if (hy === p.y) return p;
-                    if (hy === p.next.y) return p.next;
-                }
-                m = p.x < p.next.x ? p : p.next;
-            }
-        }
-        p = p.next;
-    } while (p !== outerNode);
-
-    if (!m) return null;
-
-    if (hx === qx) return m.prev; // hole touches outer segment; pick lower endpoint
-
-    // look for points inside the triangle of hole point, segment intersection and endpoint;
-    // if there are no points found, we have a valid connection;
-    // otherwise choose the point of the minimum angle with the ray as connection point
-
-    var stop = m,
-        mx = m.x,
-        my = m.y,
-        tanMin = Infinity,
-        tan;
-
-    p = m.next;
-
-    while (p !== stop) {
-        if (hx >= p.x && p.x >= mx &&
-                pointInTriangle(hy < my ? hx : qx, hy, mx, my, hy < my ? qx : hx, hy, p.x, p.y)) {
-
-            tan = Math.abs(hy - p.y) / (hx - p.x); // tangential
-
-            if ((tan < tanMin || (tan === tanMin && p.x > m.x)) && locallyInside(p, hole)) {
-                m = p;
-                tanMin = tan;
-            }
-        }
-
-        p = p.next;
-    }
-
-    return m;
-}
-
-// interlink polygon nodes in z-order
-function indexCurve(start, minX, minY, size) {
-    var p = start;
-    do {
-        if (p.z === null) p.z = zOrder(p.x, p.y, minX, minY, size);
-        p.prevZ = p.prev;
-        p.nextZ = p.next;
-        p = p.next;
-    } while (p !== start);
-
-    p.prevZ.nextZ = null;
-    p.prevZ = null;
-
-    sortLinked(p);
-}
-
-// Simon Tatham's linked list merge sort algorithm
-// http://www.chiark.greenend.org.uk/~sgtatham/algorithms/listsort.html
-function sortLinked(list) {
-    var i, p, q, e, tail, numMerges, pSize, qSize,
-        inSize = 1;
-
-    do {
-        p = list;
-        list = null;
-        tail = null;
-        numMerges = 0;
-
-        while (p) {
-            numMerges++;
-            q = p;
-            pSize = 0;
-            for (i = 0; i < inSize; i++) {
-                pSize++;
-                q = q.nextZ;
-                if (!q) break;
-            }
-
-            qSize = inSize;
-
-            while (pSize > 0 || (qSize > 0 && q)) {
-
-                if (pSize === 0) {
-                    e = q;
-                    q = q.nextZ;
-                    qSize--;
-                } else if (qSize === 0 || !q) {
-                    e = p;
-                    p = p.nextZ;
-                    pSize--;
-                } else if (p.z <= q.z) {
-                    e = p;
-                    p = p.nextZ;
-                    pSize--;
-                } else {
-                    e = q;
-                    q = q.nextZ;
-                    qSize--;
-                }
-
-                if (tail) tail.nextZ = e;
-                else list = e;
-
-                e.prevZ = tail;
-                tail = e;
-            }
-
-            p = q;
-        }
-
-        tail.nextZ = null;
-        inSize *= 2;
-
-    } while (numMerges > 1);
-
-    return list;
-}
-
-// z-order of a point given coords and size of the data bounding box
-function zOrder(x, y, minX, minY, size) {
-    // coords are transformed into non-negative 15-bit integer range
-    x = 32767 * (x - minX) / size;
-    y = 32767 * (y - minY) / size;
-
-    x = (x | (x << 8)) & 0x00FF00FF;
-    x = (x | (x << 4)) & 0x0F0F0F0F;
-    x = (x | (x << 2)) & 0x33333333;
-    x = (x | (x << 1)) & 0x55555555;
-
-    y = (y | (y << 8)) & 0x00FF00FF;
-    y = (y | (y << 4)) & 0x0F0F0F0F;
-    y = (y | (y << 2)) & 0x33333333;
-    y = (y | (y << 1)) & 0x55555555;
-
-    return x | (y << 1);
-}
-
-// find the leftmost node of a polygon ring
-function getLeftmost(start) {
-    var p = start,
-        leftmost = start;
-    do {
-        if (p.x < leftmost.x) leftmost = p;
-        p = p.next;
-    } while (p !== start);
-
-    return leftmost;
-}
-
-// check if a point lies within a convex triangle
-function pointInTriangle(ax, ay, bx, by, cx, cy, px, py) {
-    return (cx - px) * (ay - py) - (ax - px) * (cy - py) >= 0 &&
-           (ax - px) * (by - py) - (bx - px) * (ay - py) >= 0 &&
-           (bx - px) * (cy - py) - (cx - px) * (by - py) >= 0;
-}
-
-// check if a diagonal between two polygon nodes is valid (lies in polygon interior)
-function isValidDiagonal(a, b) {
-    return a.next.i !== b.i && a.prev.i !== b.i && !intersectsPolygon(a, b) &&
-           locallyInside(a, b) && locallyInside(b, a) && middleInside(a, b);
-}
-
-// signed area of a triangle
-function area(p, q, r) {
-    return (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
-}
-
-// check if two points are equal
-function equals(p1, p2) {
-    return p1.x === p2.x && p1.y === p2.y;
-}
-
-// check if two segments intersect
-function intersects(p1, q1, p2, q2) {
-    if ((equals(p1, q1) && equals(p2, q2)) ||
-        (equals(p1, q2) && equals(p2, q1))) return true;
-    return area(p1, q1, p2) > 0 !== area(p1, q1, q2) > 0 &&
-           area(p2, q2, p1) > 0 !== area(p2, q2, q1) > 0;
-}
-
-// check if a polygon diagonal intersects any polygon segments
-function intersectsPolygon(a, b) {
-    var p = a;
-    do {
-        if (p.i !== a.i && p.next.i !== a.i && p.i !== b.i && p.next.i !== b.i &&
-                intersects(p, p.next, a, b)) return true;
-        p = p.next;
-    } while (p !== a);
-
-    return false;
-}
-
-// check if a polygon diagonal is locally inside the polygon
-function locallyInside(a, b) {
-    return area(a.prev, a, a.next) < 0 ?
-        area(a, b, a.next) >= 0 && area(a, a.prev, b) >= 0 :
-        area(a, b, a.prev) < 0 || area(a, a.next, b) < 0;
-}
-
-// check if the middle point of a polygon diagonal is inside the polygon
-function middleInside(a, b) {
-    var p = a,
-        inside = false,
-        px = (a.x + b.x) / 2,
-        py = (a.y + b.y) / 2;
-    do {
-        if (((p.y > py) !== (p.next.y > py)) && (px < (p.next.x - p.x) * (py - p.y) / (p.next.y - p.y) + p.x))
-            inside = !inside;
-        p = p.next;
-    } while (p !== a);
-
-    return inside;
-}
-
-// link two polygon vertices with a bridge; if the vertices belong to the same ring, it splits polygon into two;
-// if one belongs to the outer ring and another to a hole, it merges it into a single ring
-function splitPolygon(a, b) {
-    var a2 = new Node(a.i, a.x, a.y),
-        b2 = new Node(b.i, b.x, b.y),
-        an = a.next,
-        bp = b.prev;
-
-    a.next = b;
-    b.prev = a;
-
-    a2.next = an;
-    an.prev = a2;
-
-    b2.next = a2;
-    a2.prev = b2;
-
-    bp.next = b2;
-    b2.prev = bp;
-
-    return b2;
-}
-
-// create a node and optionally link it with previous one (in a circular doubly linked list)
-function insertNode(i, x, y, last) {
-    var p = new Node(i, x, y);
-
-    if (!last) {
-        p.prev = p;
-        p.next = p;
-
-    } else {
-        p.next = last.next;
-        p.prev = last;
-        last.next.prev = p;
-        last.next = p;
-    }
-    return p;
-}
-
-function removeNode(p) {
-    p.next.prev = p.prev;
-    p.prev.next = p.next;
-
-    if (p.prevZ) p.prevZ.nextZ = p.nextZ;
-    if (p.nextZ) p.nextZ.prevZ = p.prevZ;
-}
-
-function Node(i, x, y) {
-    // vertice index in coordinates array
-    this.i = i;
-
-    // vertex coordinates
-    this.x = x;
-    this.y = y;
-
-    // previous and next vertice nodes in a polygon ring
-    this.prev = null;
-    this.next = null;
-
-    // z-order curve value
-    this.z = null;
-
-    // previous and next nodes in z-order
-    this.prevZ = null;
-    this.nextZ = null;
-
-    // indicates whether this is a steiner point
-    this.steiner = false;
-}
-
-// return a percentage difference between the polygon area and its triangulation area;
-// used to verify correctness of triangulation
-earcut.deviation = function (data, holeIndices, dim, triangles) {
-    var hasHoles = holeIndices && holeIndices.length;
-    var outerLen = hasHoles ? holeIndices[0] * dim : data.length;
-
-    var polygonArea = Math.abs(signedArea(data, 0, outerLen, dim));
-    if (hasHoles) {
-        for (var i = 0, len = holeIndices.length; i < len; i++) {
-            var start = holeIndices[i] * dim;
-            var end = i < len - 1 ? holeIndices[i + 1] * dim : data.length;
-            polygonArea -= Math.abs(signedArea(data, start, end, dim));
-        }
-    }
-
-    var trianglesArea = 0;
-    for (i = 0; i < triangles.length; i += 3) {
-        var a = triangles[i] * dim;
-        var b = triangles[i + 1] * dim;
-        var c = triangles[i + 2] * dim;
-        trianglesArea += Math.abs(
-            (data[a] - data[c]) * (data[b + 1] - data[a + 1]) -
-            (data[a] - data[b]) * (data[c + 1] - data[a + 1]));
-    }
-
-    return polygonArea === 0 && trianglesArea === 0 ? 0 :
-        Math.abs((trianglesArea - polygonArea) / polygonArea);
-};
-
-function signedArea(data, start, end, dim) {
-    var sum = 0;
-    for (var i = start, j = end - dim; i < end; i += dim) {
-        sum += (data[j] - data[i]) * (data[i + 1] + data[j + 1]);
-        j = i;
-    }
-    return sum;
-}
-
-// turn a polygon in a multi-dimensional array form (e.g. as in GeoJSON) into a form Earcut accepts
-earcut.flatten = function (data) {
-    var dim = data[0][0].length,
-        result = {vertices: [], holes: [], dimensions: dim},
-        holeIndex = 0;
-
-    for (var i = 0; i < data.length; i++) {
-        for (var j = 0; j < data[i].length; j++) {
-            for (var d = 0; d < dim; d++) result.vertices.push(data[i][j][d]);
-        }
-        if (i > 0) {
-            holeIndex += data[i - 1].length;
-            result.holes.push(holeIndex);
-        }
-    }
-    return result;
-};
-
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/eventemitter3/index.js":[function(require,module,exports){
-'use strict';
-
-var has = Object.prototype.hasOwnProperty;
-
-//
-// We store our EE objects in a plain object whose properties are event names.
-// If `Object.create(null)` is not supported we prefix the event names with a
-// `~` to make sure that the built-in object properties are not overridden or
-// used as an attack vector.
-// We also assume that `Object.create(null)` is available when the event name
-// is an ES6 Symbol.
-//
-var prefix = typeof Object.create !== 'function' ? '~' : false;
-
-/**
- * Representation of a single EventEmitter function.
- *
- * @param {Function} fn Event handler to be called.
- * @param {Mixed} context Context for function execution.
- * @param {Boolean} [once=false] Only emit once
- * @api private
- */
-function EE(fn, context, once) {
-  this.fn = fn;
-  this.context = context;
-  this.once = once || false;
-}
-
-/**
- * Minimal EventEmitter interface that is molded against the Node.js
- * EventEmitter interface.
- *
- * @constructor
- * @api public
- */
-function EventEmitter() { /* Nothing to set */ }
-
-/**
- * Hold the assigned EventEmitters by name.
- *
- * @type {Object}
- * @private
- */
-EventEmitter.prototype._events = undefined;
-
-/**
- * Return an array listing the events for which the emitter has registered
- * listeners.
- *
- * @returns {Array}
- * @api public
- */
-EventEmitter.prototype.eventNames = function eventNames() {
-  var events = this._events
-    , names = []
-    , name;
-
-  if (!events) return names;
-
-  for (name in events) {
-    if (has.call(events, name)) names.push(prefix ? name.slice(1) : name);
-  }
-
-  if (Object.getOwnPropertySymbols) {
-    return names.concat(Object.getOwnPropertySymbols(events));
-  }
-
-  return names;
-};
-
-/**
- * Return a list of assigned event listeners.
- *
- * @param {String} event The events that should be listed.
- * @param {Boolean} exists We only need to know if there are listeners.
- * @returns {Array|Boolean}
- * @api public
- */
-EventEmitter.prototype.listeners = function listeners(event, exists) {
-  var evt = prefix ? prefix + event : event
-    , available = this._events && this._events[evt];
-
-  if (exists) return !!available;
-  if (!available) return [];
-  if (available.fn) return [available.fn];
-
-  for (var i = 0, l = available.length, ee = new Array(l); i < l; i++) {
-    ee[i] = available[i].fn;
-  }
-
-  return ee;
-};
-
-/**
- * Emit an event to all registered event listeners.
- *
- * @param {String} event The name of the event.
- * @returns {Boolean} Indication if we've emitted an event.
- * @api public
- */
-EventEmitter.prototype.emit = function emit(event, a1, a2, a3, a4, a5) {
-  var evt = prefix ? prefix + event : event;
-
-  if (!this._events || !this._events[evt]) return false;
-
-  var listeners = this._events[evt]
-    , len = arguments.length
-    , args
-    , i;
-
-  if ('function' === typeof listeners.fn) {
-    if (listeners.once) this.removeListener(event, listeners.fn, undefined, true);
-
-    switch (len) {
-      case 1: return listeners.fn.call(listeners.context), true;
-      case 2: return listeners.fn.call(listeners.context, a1), true;
-      case 3: return listeners.fn.call(listeners.context, a1, a2), true;
-      case 4: return listeners.fn.call(listeners.context, a1, a2, a3), true;
-      case 5: return listeners.fn.call(listeners.context, a1, a2, a3, a4), true;
-      case 6: return listeners.fn.call(listeners.context, a1, a2, a3, a4, a5), true;
-    }
-
-    for (i = 1, args = new Array(len -1); i < len; i++) {
-      args[i - 1] = arguments[i];
-    }
-
-    listeners.fn.apply(listeners.context, args);
-  } else {
-    var length = listeners.length
-      , j;
-
-    for (i = 0; i < length; i++) {
-      if (listeners[i].once) this.removeListener(event, listeners[i].fn, undefined, true);
-
-      switch (len) {
-        case 1: listeners[i].fn.call(listeners[i].context); break;
-        case 2: listeners[i].fn.call(listeners[i].context, a1); break;
-        case 3: listeners[i].fn.call(listeners[i].context, a1, a2); break;
-        default:
-          if (!args) for (j = 1, args = new Array(len -1); j < len; j++) {
-            args[j - 1] = arguments[j];
-          }
-
-          listeners[i].fn.apply(listeners[i].context, args);
-      }
-    }
-  }
-
-  return true;
-};
-
-/**
- * Register a new EventListener for the given event.
- *
- * @param {String} event Name of the event.
- * @param {Function} fn Callback function.
- * @param {Mixed} [context=this] The context of the function.
- * @api public
- */
-EventEmitter.prototype.on = function on(event, fn, context) {
-  var listener = new EE(fn, context || this)
-    , evt = prefix ? prefix + event : event;
-
-  if (!this._events) this._events = prefix ? {} : Object.create(null);
-  if (!this._events[evt]) this._events[evt] = listener;
-  else {
-    if (!this._events[evt].fn) this._events[evt].push(listener);
-    else this._events[evt] = [
-      this._events[evt], listener
-    ];
-  }
-
-  return this;
-};
-
-/**
- * Add an EventListener that's only called once.
- *
- * @param {String} event Name of the event.
- * @param {Function} fn Callback function.
- * @param {Mixed} [context=this] The context of the function.
- * @api public
- */
-EventEmitter.prototype.once = function once(event, fn, context) {
-  var listener = new EE(fn, context || this, true)
-    , evt = prefix ? prefix + event : event;
-
-  if (!this._events) this._events = prefix ? {} : Object.create(null);
-  if (!this._events[evt]) this._events[evt] = listener;
-  else {
-    if (!this._events[evt].fn) this._events[evt].push(listener);
-    else this._events[evt] = [
-      this._events[evt], listener
-    ];
-  }
-
-  return this;
-};
-
-/**
- * Remove event listeners.
- *
- * @param {String} event The event we want to remove.
- * @param {Function} fn The listener that we need to find.
- * @param {Mixed} context Only remove listeners matching this context.
- * @param {Boolean} once Only remove once listeners.
- * @api public
- */
-EventEmitter.prototype.removeListener = function removeListener(event, fn, context, once) {
-  var evt = prefix ? prefix + event : event;
-
-  if (!this._events || !this._events[evt]) return this;
-
-  var listeners = this._events[evt]
-    , events = [];
-
-  if (fn) {
-    if (listeners.fn) {
-      if (
-           listeners.fn !== fn
-        || (once && !listeners.once)
-        || (context && listeners.context !== context)
-      ) {
-        events.push(listeners);
-      }
-    } else {
-      for (var i = 0, length = listeners.length; i < length; i++) {
-        if (
-             listeners[i].fn !== fn
-          || (once && !listeners[i].once)
-          || (context && listeners[i].context !== context)
-        ) {
-          events.push(listeners[i]);
-        }
-      }
-    }
-  }
-
-  //
-  // Reset the array, or remove it completely if we have no more listeners.
-  //
-  if (events.length) {
-    this._events[evt] = events.length === 1 ? events[0] : events;
-  } else {
-    delete this._events[evt];
-  }
-
-  return this;
-};
-
-/**
- * Remove all listeners or only the listeners for the specified event.
- *
- * @param {String} event The event want to remove all listeners for.
- * @api public
- */
-EventEmitter.prototype.removeAllListeners = function removeAllListeners(event) {
-  if (!this._events) return this;
-
-  if (event) delete this._events[prefix ? prefix + event : event];
-  else this._events = prefix ? {} : Object.create(null);
-
-  return this;
-};
-
-//
-// Alias methods names because people roll like that.
-//
-EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
-EventEmitter.prototype.addListener = EventEmitter.prototype.on;
-
-//
-// This function doesn't apply anymore.
-//
-EventEmitter.prototype.setMaxListeners = function setMaxListeners() {
-  return this;
-};
-
-//
-// Expose the prefix.
-//
-EventEmitter.prefixed = prefix;
-
-//
-// Expose the module.
-//
-if ('undefined' !== typeof module) {
-  module.exports = EventEmitter;
-}
-
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/object-assign/index.js":[function(require,module,exports){
-'use strict';
-/* eslint-disable no-unused-vars */
-var hasOwnProperty = Object.prototype.hasOwnProperty;
-var propIsEnumerable = Object.prototype.propertyIsEnumerable;
-
-function toObject(val) {
-	if (val === null || val === undefined) {
-		throw new TypeError('Object.assign cannot be called with null or undefined');
-	}
-
-	return Object(val);
-}
-
-function shouldUseNative() {
-	try {
-		if (!Object.assign) {
-			return false;
-		}
-
-		// Detect buggy property enumeration order in older V8 versions.
-
-		// https://bugs.chromium.org/p/v8/issues/detail?id=4118
-		var test1 = new String('abc');  // eslint-disable-line
-		test1[5] = 'de';
-		if (Object.getOwnPropertyNames(test1)[0] === '5') {
-			return false;
-		}
-
-		// https://bugs.chromium.org/p/v8/issues/detail?id=3056
-		var test2 = {};
-		for (var i = 0; i < 10; i++) {
-			test2['_' + String.fromCharCode(i)] = i;
-		}
-		var order2 = Object.getOwnPropertyNames(test2).map(function (n) {
-			return test2[n];
-		});
-		if (order2.join('') !== '0123456789') {
-			return false;
-		}
-
-		// https://bugs.chromium.org/p/v8/issues/detail?id=3056
-		var test3 = {};
-		'abcdefghijklmnopqrst'.split('').forEach(function (letter) {
-			test3[letter] = letter;
-		});
-		if (Object.keys(Object.assign({}, test3)).join('') !==
-				'abcdefghijklmnopqrst') {
-			return false;
-		}
-
-		return true;
-	} catch (e) {
-		// We don't expect any of the above to throw, but better to be safe.
-		return false;
-	}
-}
-
-module.exports = shouldUseNative() ? Object.assign : function (target, source) {
-	var from;
-	var to = toObject(target);
-	var symbols;
-
-	for (var s = 1; s < arguments.length; s++) {
-		from = Object(arguments[s]);
-
-		for (var key in from) {
-			if (hasOwnProperty.call(from, key)) {
-				to[key] = from[key];
-			}
-		}
-
-		if (Object.getOwnPropertySymbols) {
-			symbols = Object.getOwnPropertySymbols(from);
-			for (var i = 0; i < symbols.length; i++) {
-				if (propIsEnumerable.call(from, symbols[i])) {
-					to[symbols[i]] = from[symbols[i]];
-				}
-			}
-		}
-	}
-
-	return to;
-};
-
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/path-browserify/index.js":[function(require,module,exports){
-(function (process){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-// resolves . and .. elements in a path array with directory names there
-// must be no slashes, empty elements, or device names (c:\) in the array
-// (so also no leading and trailing slashes - it does not distinguish
-// relative and absolute paths)
-function normalizeArray(parts, allowAboveRoot) {
-  // if the path tries to go above the root, `up` ends up > 0
-  var up = 0;
-  for (var i = parts.length - 1; i >= 0; i--) {
-    var last = parts[i];
-    if (last === '.') {
-      parts.splice(i, 1);
-    } else if (last === '..') {
-      parts.splice(i, 1);
-      up++;
-    } else if (up) {
-      parts.splice(i, 1);
-      up--;
-    }
-  }
-
-  // if the path is allowed to go above the root, restore leading ..s
-  if (allowAboveRoot) {
-    for (; up--; up) {
-      parts.unshift('..');
-    }
-  }
-
-  return parts;
-}
-
-// Split a filename into [root, dir, basename, ext], unix version
-// 'root' is just a slash, or nothing.
-var splitPathRe =
-    /^(\/?|)([\s\S]*?)((?:\.{1,2}|[^\/]+?|)(\.[^.\/]*|))(?:[\/]*)$/;
-var splitPath = function(filename) {
-  return splitPathRe.exec(filename).slice(1);
-};
-
-// path.resolve([from ...], to)
-// posix version
-exports.resolve = function() {
-  var resolvedPath = '',
-      resolvedAbsolute = false;
-
-  for (var i = arguments.length - 1; i >= -1 && !resolvedAbsolute; i--) {
-    var path = (i >= 0) ? arguments[i] : process.cwd();
-
-    // Skip empty and invalid entries
-    if (typeof path !== 'string') {
-      throw new TypeError('Arguments to path.resolve must be strings');
-    } else if (!path) {
-      continue;
-    }
-
-    resolvedPath = path + '/' + resolvedPath;
-    resolvedAbsolute = path.charAt(0) === '/';
-  }
-
-  // At this point the path should be resolved to a full absolute path, but
-  // handle relative paths to be safe (might happen when process.cwd() fails)
-
-  // Normalize the path
-  resolvedPath = normalizeArray(filter(resolvedPath.split('/'), function(p) {
-    return !!p;
-  }), !resolvedAbsolute).join('/');
-
-  return ((resolvedAbsolute ? '/' : '') + resolvedPath) || '.';
-};
-
-// path.normalize(path)
-// posix version
-exports.normalize = function(path) {
-  var isAbsolute = exports.isAbsolute(path),
-      trailingSlash = substr(path, -1) === '/';
-
-  // Normalize the path
-  path = normalizeArray(filter(path.split('/'), function(p) {
-    return !!p;
-  }), !isAbsolute).join('/');
-
-  if (!path && !isAbsolute) {
-    path = '.';
-  }
-  if (path && trailingSlash) {
-    path += '/';
-  }
-
-  return (isAbsolute ? '/' : '') + path;
-};
-
-// posix version
-exports.isAbsolute = function(path) {
-  return path.charAt(0) === '/';
-};
-
-// posix version
-exports.join = function() {
-  var paths = Array.prototype.slice.call(arguments, 0);
-  return exports.normalize(filter(paths, function(p, index) {
-    if (typeof p !== 'string') {
-      throw new TypeError('Arguments to path.join must be strings');
-    }
-    return p;
-  }).join('/'));
-};
-
-
-// path.relative(from, to)
-// posix version
-exports.relative = function(from, to) {
-  from = exports.resolve(from).substr(1);
-  to = exports.resolve(to).substr(1);
-
-  function trim(arr) {
-    var start = 0;
-    for (; start < arr.length; start++) {
-      if (arr[start] !== '') break;
-    }
-
-    var end = arr.length - 1;
-    for (; end >= 0; end--) {
-      if (arr[end] !== '') break;
-    }
-
-    if (start > end) return [];
-    return arr.slice(start, end - start + 1);
-  }
-
-  var fromParts = trim(from.split('/'));
-  var toParts = trim(to.split('/'));
-
-  var length = Math.min(fromParts.length, toParts.length);
-  var samePartsLength = length;
-  for (var i = 0; i < length; i++) {
-    if (fromParts[i] !== toParts[i]) {
-      samePartsLength = i;
-      break;
-    }
-  }
-
-  var outputParts = [];
-  for (var i = samePartsLength; i < fromParts.length; i++) {
-    outputParts.push('..');
-  }
-
-  outputParts = outputParts.concat(toParts.slice(samePartsLength));
-
-  return outputParts.join('/');
-};
-
-exports.sep = '/';
-exports.delimiter = ':';
-
-exports.dirname = function(path) {
-  var result = splitPath(path),
-      root = result[0],
-      dir = result[1];
-
-  if (!root && !dir) {
-    // No dirname whatsoever
-    return '.';
-  }
-
-  if (dir) {
-    // It has a dirname, strip trailing slash
-    dir = dir.substr(0, dir.length - 1);
-  }
-
-  return root + dir;
-};
-
-
-exports.basename = function(path, ext) {
-  var f = splitPath(path)[2];
-  // TODO: make this comparison case-insensitive on windows?
-  if (ext && f.substr(-1 * ext.length) === ext) {
-    f = f.substr(0, f.length - ext.length);
-  }
-  return f;
-};
-
-
-exports.extname = function(path) {
-  return splitPath(path)[3];
-};
-
-function filter (xs, f) {
-    if (xs.filter) return xs.filter(f);
-    var res = [];
-    for (var i = 0; i < xs.length; i++) {
-        if (f(xs[i], i, xs)) res.push(xs[i]);
-    }
-    return res;
-}
-
-// String.prototype.substr - negative index don't work in IE8
-var substr = 'ab'.substr(-1) === 'b'
-    ? function (str, start, len) { return str.substr(start, len) }
-    : function (str, start, len) {
-        if (start < 0) start = str.length + start;
-        return str.substr(start, len);
-    }
-;
-
-}).call(this,require('_process'))
-
-},{"_process":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/process/browser.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/node_modules/async/lib/async.js":[function(require,module,exports){
+(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/async/lib/async.js":[function(require,module,exports){
 (function (process,global){
 /*!
  * async
@@ -2519,7 +1268,1297 @@ var substr = 'ab'.substr(-1) === 'b'
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 
-},{"_process":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/process/browser.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/accessibility/AccessibilityManager.js":[function(require,module,exports){
+},{"_process":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/process/browser.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/earcut/src/earcut.js":[function(require,module,exports){
+'use strict';
+
+module.exports = earcut;
+
+function earcut(data, holeIndices, dim) {
+
+    dim = dim || 2;
+
+    var hasHoles = holeIndices && holeIndices.length,
+        outerLen = hasHoles ? holeIndices[0] * dim : data.length,
+        outerNode = linkedList(data, 0, outerLen, dim, true),
+        triangles = [];
+
+    if (!outerNode) return triangles;
+
+    var minX, minY, maxX, maxY, x, y, size;
+
+    if (hasHoles) outerNode = eliminateHoles(data, holeIndices, outerNode, dim);
+
+    // if the shape is not too simple, we'll use z-order curve hash later; calculate polygon bbox
+    if (data.length > 80 * dim) {
+        minX = maxX = data[0];
+        minY = maxY = data[1];
+
+        for (var i = dim; i < outerLen; i += dim) {
+            x = data[i];
+            y = data[i + 1];
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+        }
+
+        // minX, minY and size are later used to transform coords into integers for z-order calculation
+        size = Math.max(maxX - minX, maxY - minY);
+    }
+
+    earcutLinked(outerNode, triangles, dim, minX, minY, size);
+
+    return triangles;
+}
+
+// create a circular doubly linked list from polygon points in the specified winding order
+function linkedList(data, start, end, dim, clockwise) {
+    var i, last;
+
+    if (clockwise === (signedArea(data, start, end, dim) > 0)) {
+        for (i = start; i < end; i += dim) last = insertNode(i, data[i], data[i + 1], last);
+    } else {
+        for (i = end - dim; i >= start; i -= dim) last = insertNode(i, data[i], data[i + 1], last);
+    }
+
+    if (last && equals(last, last.next)) {
+        removeNode(last);
+        last = last.next;
+    }
+
+    return last;
+}
+
+// eliminate colinear or duplicate points
+function filterPoints(start, end) {
+    if (!start) return start;
+    if (!end) end = start;
+
+    var p = start,
+        again;
+    do {
+        again = false;
+
+        if (!p.steiner && (equals(p, p.next) || area(p.prev, p, p.next) === 0)) {
+            removeNode(p);
+            p = end = p.prev;
+            if (p === p.next) return null;
+            again = true;
+
+        } else {
+            p = p.next;
+        }
+    } while (again || p !== end);
+
+    return end;
+}
+
+// main ear slicing loop which triangulates a polygon (given as a linked list)
+function earcutLinked(ear, triangles, dim, minX, minY, size, pass) {
+    if (!ear) return;
+
+    // interlink polygon nodes in z-order
+    if (!pass && size) indexCurve(ear, minX, minY, size);
+
+    var stop = ear,
+        prev, next;
+
+    // iterate through ears, slicing them one by one
+    while (ear.prev !== ear.next) {
+        prev = ear.prev;
+        next = ear.next;
+
+        if (size ? isEarHashed(ear, minX, minY, size) : isEar(ear)) {
+            // cut off the triangle
+            triangles.push(prev.i / dim);
+            triangles.push(ear.i / dim);
+            triangles.push(next.i / dim);
+
+            removeNode(ear);
+
+            // skipping the next vertice leads to less sliver triangles
+            ear = next.next;
+            stop = next.next;
+
+            continue;
+        }
+
+        ear = next;
+
+        // if we looped through the whole remaining polygon and can't find any more ears
+        if (ear === stop) {
+            // try filtering points and slicing again
+            if (!pass) {
+                earcutLinked(filterPoints(ear), triangles, dim, minX, minY, size, 1);
+
+            // if this didn't work, try curing all small self-intersections locally
+            } else if (pass === 1) {
+                ear = cureLocalIntersections(ear, triangles, dim);
+                earcutLinked(ear, triangles, dim, minX, minY, size, 2);
+
+            // as a last resort, try splitting the remaining polygon into two
+            } else if (pass === 2) {
+                splitEarcut(ear, triangles, dim, minX, minY, size);
+            }
+
+            break;
+        }
+    }
+}
+
+// check whether a polygon node forms a valid ear with adjacent nodes
+function isEar(ear) {
+    var a = ear.prev,
+        b = ear,
+        c = ear.next;
+
+    if (area(a, b, c) >= 0) return false; // reflex, can't be an ear
+
+    // now make sure we don't have other points inside the potential ear
+    var p = ear.next.next;
+
+    while (p !== ear.prev) {
+        if (pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
+            area(p.prev, p, p.next) >= 0) return false;
+        p = p.next;
+    }
+
+    return true;
+}
+
+function isEarHashed(ear, minX, minY, size) {
+    var a = ear.prev,
+        b = ear,
+        c = ear.next;
+
+    if (area(a, b, c) >= 0) return false; // reflex, can't be an ear
+
+    // triangle bbox; min & max are calculated like this for speed
+    var minTX = a.x < b.x ? (a.x < c.x ? a.x : c.x) : (b.x < c.x ? b.x : c.x),
+        minTY = a.y < b.y ? (a.y < c.y ? a.y : c.y) : (b.y < c.y ? b.y : c.y),
+        maxTX = a.x > b.x ? (a.x > c.x ? a.x : c.x) : (b.x > c.x ? b.x : c.x),
+        maxTY = a.y > b.y ? (a.y > c.y ? a.y : c.y) : (b.y > c.y ? b.y : c.y);
+
+    // z-order range for the current triangle bbox;
+    var minZ = zOrder(minTX, minTY, minX, minY, size),
+        maxZ = zOrder(maxTX, maxTY, minX, minY, size);
+
+    // first look for points inside the triangle in increasing z-order
+    var p = ear.nextZ;
+
+    while (p && p.z <= maxZ) {
+        if (p !== ear.prev && p !== ear.next &&
+            pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
+            area(p.prev, p, p.next) >= 0) return false;
+        p = p.nextZ;
+    }
+
+    // then look for points in decreasing z-order
+    p = ear.prevZ;
+
+    while (p && p.z >= minZ) {
+        if (p !== ear.prev && p !== ear.next &&
+            pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
+            area(p.prev, p, p.next) >= 0) return false;
+        p = p.prevZ;
+    }
+
+    return true;
+}
+
+// go through all polygon nodes and cure small local self-intersections
+function cureLocalIntersections(start, triangles, dim) {
+    var p = start;
+    do {
+        var a = p.prev,
+            b = p.next.next;
+
+        if (!equals(a, b) && intersects(a, p, p.next, b) && locallyInside(a, b) && locallyInside(b, a)) {
+
+            triangles.push(a.i / dim);
+            triangles.push(p.i / dim);
+            triangles.push(b.i / dim);
+
+            // remove two nodes involved
+            removeNode(p);
+            removeNode(p.next);
+
+            p = start = b;
+        }
+        p = p.next;
+    } while (p !== start);
+
+    return p;
+}
+
+// try splitting polygon into two and triangulate them independently
+function splitEarcut(start, triangles, dim, minX, minY, size) {
+    // look for a valid diagonal that divides the polygon into two
+    var a = start;
+    do {
+        var b = a.next.next;
+        while (b !== a.prev) {
+            if (a.i !== b.i && isValidDiagonal(a, b)) {
+                // split the polygon in two by the diagonal
+                var c = splitPolygon(a, b);
+
+                // filter colinear points around the cuts
+                a = filterPoints(a, a.next);
+                c = filterPoints(c, c.next);
+
+                // run earcut on each half
+                earcutLinked(a, triangles, dim, minX, minY, size);
+                earcutLinked(c, triangles, dim, minX, minY, size);
+                return;
+            }
+            b = b.next;
+        }
+        a = a.next;
+    } while (a !== start);
+}
+
+// link every hole into the outer loop, producing a single-ring polygon without holes
+function eliminateHoles(data, holeIndices, outerNode, dim) {
+    var queue = [],
+        i, len, start, end, list;
+
+    for (i = 0, len = holeIndices.length; i < len; i++) {
+        start = holeIndices[i] * dim;
+        end = i < len - 1 ? holeIndices[i + 1] * dim : data.length;
+        list = linkedList(data, start, end, dim, false);
+        if (list === list.next) list.steiner = true;
+        queue.push(getLeftmost(list));
+    }
+
+    queue.sort(compareX);
+
+    // process holes from left to right
+    for (i = 0; i < queue.length; i++) {
+        eliminateHole(queue[i], outerNode);
+        outerNode = filterPoints(outerNode, outerNode.next);
+    }
+
+    return outerNode;
+}
+
+function compareX(a, b) {
+    return a.x - b.x;
+}
+
+// find a bridge between vertices that connects hole with an outer ring and and link it
+function eliminateHole(hole, outerNode) {
+    outerNode = findHoleBridge(hole, outerNode);
+    if (outerNode) {
+        var b = splitPolygon(outerNode, hole);
+        filterPoints(b, b.next);
+    }
+}
+
+// David Eberly's algorithm for finding a bridge between hole and outer polygon
+function findHoleBridge(hole, outerNode) {
+    var p = outerNode,
+        hx = hole.x,
+        hy = hole.y,
+        qx = -Infinity,
+        m;
+
+    // find a segment intersected by a ray from the hole's leftmost point to the left;
+    // segment's endpoint with lesser x will be potential connection point
+    do {
+        if (hy <= p.y && hy >= p.next.y) {
+            var x = p.x + (hy - p.y) * (p.next.x - p.x) / (p.next.y - p.y);
+            if (x <= hx && x > qx) {
+                qx = x;
+                if (x === hx) {
+                    if (hy === p.y) return p;
+                    if (hy === p.next.y) return p.next;
+                }
+                m = p.x < p.next.x ? p : p.next;
+            }
+        }
+        p = p.next;
+    } while (p !== outerNode);
+
+    if (!m) return null;
+
+    if (hx === qx) return m.prev; // hole touches outer segment; pick lower endpoint
+
+    // look for points inside the triangle of hole point, segment intersection and endpoint;
+    // if there are no points found, we have a valid connection;
+    // otherwise choose the point of the minimum angle with the ray as connection point
+
+    var stop = m,
+        mx = m.x,
+        my = m.y,
+        tanMin = Infinity,
+        tan;
+
+    p = m.next;
+
+    while (p !== stop) {
+        if (hx >= p.x && p.x >= mx &&
+                pointInTriangle(hy < my ? hx : qx, hy, mx, my, hy < my ? qx : hx, hy, p.x, p.y)) {
+
+            tan = Math.abs(hy - p.y) / (hx - p.x); // tangential
+
+            if ((tan < tanMin || (tan === tanMin && p.x > m.x)) && locallyInside(p, hole)) {
+                m = p;
+                tanMin = tan;
+            }
+        }
+
+        p = p.next;
+    }
+
+    return m;
+}
+
+// interlink polygon nodes in z-order
+function indexCurve(start, minX, minY, size) {
+    var p = start;
+    do {
+        if (p.z === null) p.z = zOrder(p.x, p.y, minX, minY, size);
+        p.prevZ = p.prev;
+        p.nextZ = p.next;
+        p = p.next;
+    } while (p !== start);
+
+    p.prevZ.nextZ = null;
+    p.prevZ = null;
+
+    sortLinked(p);
+}
+
+// Simon Tatham's linked list merge sort algorithm
+// http://www.chiark.greenend.org.uk/~sgtatham/algorithms/listsort.html
+function sortLinked(list) {
+    var i, p, q, e, tail, numMerges, pSize, qSize,
+        inSize = 1;
+
+    do {
+        p = list;
+        list = null;
+        tail = null;
+        numMerges = 0;
+
+        while (p) {
+            numMerges++;
+            q = p;
+            pSize = 0;
+            for (i = 0; i < inSize; i++) {
+                pSize++;
+                q = q.nextZ;
+                if (!q) break;
+            }
+
+            qSize = inSize;
+
+            while (pSize > 0 || (qSize > 0 && q)) {
+
+                if (pSize === 0) {
+                    e = q;
+                    q = q.nextZ;
+                    qSize--;
+                } else if (qSize === 0 || !q) {
+                    e = p;
+                    p = p.nextZ;
+                    pSize--;
+                } else if (p.z <= q.z) {
+                    e = p;
+                    p = p.nextZ;
+                    pSize--;
+                } else {
+                    e = q;
+                    q = q.nextZ;
+                    qSize--;
+                }
+
+                if (tail) tail.nextZ = e;
+                else list = e;
+
+                e.prevZ = tail;
+                tail = e;
+            }
+
+            p = q;
+        }
+
+        tail.nextZ = null;
+        inSize *= 2;
+
+    } while (numMerges > 1);
+
+    return list;
+}
+
+// z-order of a point given coords and size of the data bounding box
+function zOrder(x, y, minX, minY, size) {
+    // coords are transformed into non-negative 15-bit integer range
+    x = 32767 * (x - minX) / size;
+    y = 32767 * (y - minY) / size;
+
+    x = (x | (x << 8)) & 0x00FF00FF;
+    x = (x | (x << 4)) & 0x0F0F0F0F;
+    x = (x | (x << 2)) & 0x33333333;
+    x = (x | (x << 1)) & 0x55555555;
+
+    y = (y | (y << 8)) & 0x00FF00FF;
+    y = (y | (y << 4)) & 0x0F0F0F0F;
+    y = (y | (y << 2)) & 0x33333333;
+    y = (y | (y << 1)) & 0x55555555;
+
+    return x | (y << 1);
+}
+
+// find the leftmost node of a polygon ring
+function getLeftmost(start) {
+    var p = start,
+        leftmost = start;
+    do {
+        if (p.x < leftmost.x) leftmost = p;
+        p = p.next;
+    } while (p !== start);
+
+    return leftmost;
+}
+
+// check if a point lies within a convex triangle
+function pointInTriangle(ax, ay, bx, by, cx, cy, px, py) {
+    return (cx - px) * (ay - py) - (ax - px) * (cy - py) >= 0 &&
+           (ax - px) * (by - py) - (bx - px) * (ay - py) >= 0 &&
+           (bx - px) * (cy - py) - (cx - px) * (by - py) >= 0;
+}
+
+// check if a diagonal between two polygon nodes is valid (lies in polygon interior)
+function isValidDiagonal(a, b) {
+    return a.next.i !== b.i && a.prev.i !== b.i && !intersectsPolygon(a, b) &&
+           locallyInside(a, b) && locallyInside(b, a) && middleInside(a, b);
+}
+
+// signed area of a triangle
+function area(p, q, r) {
+    return (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+}
+
+// check if two points are equal
+function equals(p1, p2) {
+    return p1.x === p2.x && p1.y === p2.y;
+}
+
+// check if two segments intersect
+function intersects(p1, q1, p2, q2) {
+    if ((equals(p1, q1) && equals(p2, q2)) ||
+        (equals(p1, q2) && equals(p2, q1))) return true;
+    return area(p1, q1, p2) > 0 !== area(p1, q1, q2) > 0 &&
+           area(p2, q2, p1) > 0 !== area(p2, q2, q1) > 0;
+}
+
+// check if a polygon diagonal intersects any polygon segments
+function intersectsPolygon(a, b) {
+    var p = a;
+    do {
+        if (p.i !== a.i && p.next.i !== a.i && p.i !== b.i && p.next.i !== b.i &&
+                intersects(p, p.next, a, b)) return true;
+        p = p.next;
+    } while (p !== a);
+
+    return false;
+}
+
+// check if a polygon diagonal is locally inside the polygon
+function locallyInside(a, b) {
+    return area(a.prev, a, a.next) < 0 ?
+        area(a, b, a.next) >= 0 && area(a, a.prev, b) >= 0 :
+        area(a, b, a.prev) < 0 || area(a, a.next, b) < 0;
+}
+
+// check if the middle point of a polygon diagonal is inside the polygon
+function middleInside(a, b) {
+    var p = a,
+        inside = false,
+        px = (a.x + b.x) / 2,
+        py = (a.y + b.y) / 2;
+    do {
+        if (((p.y > py) !== (p.next.y > py)) && (px < (p.next.x - p.x) * (py - p.y) / (p.next.y - p.y) + p.x))
+            inside = !inside;
+        p = p.next;
+    } while (p !== a);
+
+    return inside;
+}
+
+// link two polygon vertices with a bridge; if the vertices belong to the same ring, it splits polygon into two;
+// if one belongs to the outer ring and another to a hole, it merges it into a single ring
+function splitPolygon(a, b) {
+    var a2 = new Node(a.i, a.x, a.y),
+        b2 = new Node(b.i, b.x, b.y),
+        an = a.next,
+        bp = b.prev;
+
+    a.next = b;
+    b.prev = a;
+
+    a2.next = an;
+    an.prev = a2;
+
+    b2.next = a2;
+    a2.prev = b2;
+
+    bp.next = b2;
+    b2.prev = bp;
+
+    return b2;
+}
+
+// create a node and optionally link it with previous one (in a circular doubly linked list)
+function insertNode(i, x, y, last) {
+    var p = new Node(i, x, y);
+
+    if (!last) {
+        p.prev = p;
+        p.next = p;
+
+    } else {
+        p.next = last.next;
+        p.prev = last;
+        last.next.prev = p;
+        last.next = p;
+    }
+    return p;
+}
+
+function removeNode(p) {
+    p.next.prev = p.prev;
+    p.prev.next = p.next;
+
+    if (p.prevZ) p.prevZ.nextZ = p.nextZ;
+    if (p.nextZ) p.nextZ.prevZ = p.prevZ;
+}
+
+function Node(i, x, y) {
+    // vertice index in coordinates array
+    this.i = i;
+
+    // vertex coordinates
+    this.x = x;
+    this.y = y;
+
+    // previous and next vertice nodes in a polygon ring
+    this.prev = null;
+    this.next = null;
+
+    // z-order curve value
+    this.z = null;
+
+    // previous and next nodes in z-order
+    this.prevZ = null;
+    this.nextZ = null;
+
+    // indicates whether this is a steiner point
+    this.steiner = false;
+}
+
+// return a percentage difference between the polygon area and its triangulation area;
+// used to verify correctness of triangulation
+earcut.deviation = function (data, holeIndices, dim, triangles) {
+    var hasHoles = holeIndices && holeIndices.length;
+    var outerLen = hasHoles ? holeIndices[0] * dim : data.length;
+
+    var polygonArea = Math.abs(signedArea(data, 0, outerLen, dim));
+    if (hasHoles) {
+        for (var i = 0, len = holeIndices.length; i < len; i++) {
+            var start = holeIndices[i] * dim;
+            var end = i < len - 1 ? holeIndices[i + 1] * dim : data.length;
+            polygonArea -= Math.abs(signedArea(data, start, end, dim));
+        }
+    }
+
+    var trianglesArea = 0;
+    for (i = 0; i < triangles.length; i += 3) {
+        var a = triangles[i] * dim;
+        var b = triangles[i + 1] * dim;
+        var c = triangles[i + 2] * dim;
+        trianglesArea += Math.abs(
+            (data[a] - data[c]) * (data[b + 1] - data[a + 1]) -
+            (data[a] - data[b]) * (data[c + 1] - data[a + 1]));
+    }
+
+    return polygonArea === 0 && trianglesArea === 0 ? 0 :
+        Math.abs((trianglesArea - polygonArea) / polygonArea);
+};
+
+function signedArea(data, start, end, dim) {
+    var sum = 0;
+    for (var i = start, j = end - dim; i < end; i += dim) {
+        sum += (data[j] - data[i]) * (data[i + 1] + data[j + 1]);
+        j = i;
+    }
+    return sum;
+}
+
+// turn a polygon in a multi-dimensional array form (e.g. as in GeoJSON) into a form Earcut accepts
+earcut.flatten = function (data) {
+    var dim = data[0][0].length,
+        result = {vertices: [], holes: [], dimensions: dim},
+        holeIndex = 0;
+
+    for (var i = 0; i < data.length; i++) {
+        for (var j = 0; j < data[i].length; j++) {
+            for (var d = 0; d < dim; d++) result.vertices.push(data[i][j][d]);
+        }
+        if (i > 0) {
+            holeIndex += data[i - 1].length;
+            result.holes.push(holeIndex);
+        }
+    }
+    return result;
+};
+
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/eventemitter3/index.js":[function(require,module,exports){
+'use strict';
+
+var has = Object.prototype.hasOwnProperty;
+
+//
+// We store our EE objects in a plain object whose properties are event names.
+// If `Object.create(null)` is not supported we prefix the event names with a
+// `~` to make sure that the built-in object properties are not overridden or
+// used as an attack vector.
+// We also assume that `Object.create(null)` is available when the event name
+// is an ES6 Symbol.
+//
+var prefix = typeof Object.create !== 'function' ? '~' : false;
+
+/**
+ * Representation of a single EventEmitter function.
+ *
+ * @param {Function} fn Event handler to be called.
+ * @param {Mixed} context Context for function execution.
+ * @param {Boolean} [once=false] Only emit once
+ * @api private
+ */
+function EE(fn, context, once) {
+  this.fn = fn;
+  this.context = context;
+  this.once = once || false;
+}
+
+/**
+ * Minimal EventEmitter interface that is molded against the Node.js
+ * EventEmitter interface.
+ *
+ * @constructor
+ * @api public
+ */
+function EventEmitter() { /* Nothing to set */ }
+
+/**
+ * Hold the assigned EventEmitters by name.
+ *
+ * @type {Object}
+ * @private
+ */
+EventEmitter.prototype._events = undefined;
+
+/**
+ * Return an array listing the events for which the emitter has registered
+ * listeners.
+ *
+ * @returns {Array}
+ * @api public
+ */
+EventEmitter.prototype.eventNames = function eventNames() {
+  var events = this._events
+    , names = []
+    , name;
+
+  if (!events) return names;
+
+  for (name in events) {
+    if (has.call(events, name)) names.push(prefix ? name.slice(1) : name);
+  }
+
+  if (Object.getOwnPropertySymbols) {
+    return names.concat(Object.getOwnPropertySymbols(events));
+  }
+
+  return names;
+};
+
+/**
+ * Return a list of assigned event listeners.
+ *
+ * @param {String} event The events that should be listed.
+ * @param {Boolean} exists We only need to know if there are listeners.
+ * @returns {Array|Boolean}
+ * @api public
+ */
+EventEmitter.prototype.listeners = function listeners(event, exists) {
+  var evt = prefix ? prefix + event : event
+    , available = this._events && this._events[evt];
+
+  if (exists) return !!available;
+  if (!available) return [];
+  if (available.fn) return [available.fn];
+
+  for (var i = 0, l = available.length, ee = new Array(l); i < l; i++) {
+    ee[i] = available[i].fn;
+  }
+
+  return ee;
+};
+
+/**
+ * Emit an event to all registered event listeners.
+ *
+ * @param {String} event The name of the event.
+ * @returns {Boolean} Indication if we've emitted an event.
+ * @api public
+ */
+EventEmitter.prototype.emit = function emit(event, a1, a2, a3, a4, a5) {
+  var evt = prefix ? prefix + event : event;
+
+  if (!this._events || !this._events[evt]) return false;
+
+  var listeners = this._events[evt]
+    , len = arguments.length
+    , args
+    , i;
+
+  if ('function' === typeof listeners.fn) {
+    if (listeners.once) this.removeListener(event, listeners.fn, undefined, true);
+
+    switch (len) {
+      case 1: return listeners.fn.call(listeners.context), true;
+      case 2: return listeners.fn.call(listeners.context, a1), true;
+      case 3: return listeners.fn.call(listeners.context, a1, a2), true;
+      case 4: return listeners.fn.call(listeners.context, a1, a2, a3), true;
+      case 5: return listeners.fn.call(listeners.context, a1, a2, a3, a4), true;
+      case 6: return listeners.fn.call(listeners.context, a1, a2, a3, a4, a5), true;
+    }
+
+    for (i = 1, args = new Array(len -1); i < len; i++) {
+      args[i - 1] = arguments[i];
+    }
+
+    listeners.fn.apply(listeners.context, args);
+  } else {
+    var length = listeners.length
+      , j;
+
+    for (i = 0; i < length; i++) {
+      if (listeners[i].once) this.removeListener(event, listeners[i].fn, undefined, true);
+
+      switch (len) {
+        case 1: listeners[i].fn.call(listeners[i].context); break;
+        case 2: listeners[i].fn.call(listeners[i].context, a1); break;
+        case 3: listeners[i].fn.call(listeners[i].context, a1, a2); break;
+        default:
+          if (!args) for (j = 1, args = new Array(len -1); j < len; j++) {
+            args[j - 1] = arguments[j];
+          }
+
+          listeners[i].fn.apply(listeners[i].context, args);
+      }
+    }
+  }
+
+  return true;
+};
+
+/**
+ * Register a new EventListener for the given event.
+ *
+ * @param {String} event Name of the event.
+ * @param {Function} fn Callback function.
+ * @param {Mixed} [context=this] The context of the function.
+ * @api public
+ */
+EventEmitter.prototype.on = function on(event, fn, context) {
+  var listener = new EE(fn, context || this)
+    , evt = prefix ? prefix + event : event;
+
+  if (!this._events) this._events = prefix ? {} : Object.create(null);
+  if (!this._events[evt]) this._events[evt] = listener;
+  else {
+    if (!this._events[evt].fn) this._events[evt].push(listener);
+    else this._events[evt] = [
+      this._events[evt], listener
+    ];
+  }
+
+  return this;
+};
+
+/**
+ * Add an EventListener that's only called once.
+ *
+ * @param {String} event Name of the event.
+ * @param {Function} fn Callback function.
+ * @param {Mixed} [context=this] The context of the function.
+ * @api public
+ */
+EventEmitter.prototype.once = function once(event, fn, context) {
+  var listener = new EE(fn, context || this, true)
+    , evt = prefix ? prefix + event : event;
+
+  if (!this._events) this._events = prefix ? {} : Object.create(null);
+  if (!this._events[evt]) this._events[evt] = listener;
+  else {
+    if (!this._events[evt].fn) this._events[evt].push(listener);
+    else this._events[evt] = [
+      this._events[evt], listener
+    ];
+  }
+
+  return this;
+};
+
+/**
+ * Remove event listeners.
+ *
+ * @param {String} event The event we want to remove.
+ * @param {Function} fn The listener that we need to find.
+ * @param {Mixed} context Only remove listeners matching this context.
+ * @param {Boolean} once Only remove once listeners.
+ * @api public
+ */
+EventEmitter.prototype.removeListener = function removeListener(event, fn, context, once) {
+  var evt = prefix ? prefix + event : event;
+
+  if (!this._events || !this._events[evt]) return this;
+
+  var listeners = this._events[evt]
+    , events = [];
+
+  if (fn) {
+    if (listeners.fn) {
+      if (
+           listeners.fn !== fn
+        || (once && !listeners.once)
+        || (context && listeners.context !== context)
+      ) {
+        events.push(listeners);
+      }
+    } else {
+      for (var i = 0, length = listeners.length; i < length; i++) {
+        if (
+             listeners[i].fn !== fn
+          || (once && !listeners[i].once)
+          || (context && listeners[i].context !== context)
+        ) {
+          events.push(listeners[i]);
+        }
+      }
+    }
+  }
+
+  //
+  // Reset the array, or remove it completely if we have no more listeners.
+  //
+  if (events.length) {
+    this._events[evt] = events.length === 1 ? events[0] : events;
+  } else {
+    delete this._events[evt];
+  }
+
+  return this;
+};
+
+/**
+ * Remove all listeners or only the listeners for the specified event.
+ *
+ * @param {String} event The event want to remove all listeners for.
+ * @api public
+ */
+EventEmitter.prototype.removeAllListeners = function removeAllListeners(event) {
+  if (!this._events) return this;
+
+  if (event) delete this._events[prefix ? prefix + event : event];
+  else this._events = prefix ? {} : Object.create(null);
+
+  return this;
+};
+
+//
+// Alias methods names because people roll like that.
+//
+EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
+EventEmitter.prototype.addListener = EventEmitter.prototype.on;
+
+//
+// This function doesn't apply anymore.
+//
+EventEmitter.prototype.setMaxListeners = function setMaxListeners() {
+  return this;
+};
+
+//
+// Expose the prefix.
+//
+EventEmitter.prefixed = prefix;
+
+//
+// Expose the module.
+//
+if ('undefined' !== typeof module) {
+  module.exports = EventEmitter;
+}
+
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/object-assign/index.js":[function(require,module,exports){
+/*
+object-assign
+(c) Sindre Sorhus
+@license MIT
+*/
+
+'use strict';
+/* eslint-disable no-unused-vars */
+var getOwnPropertySymbols = Object.getOwnPropertySymbols;
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+var propIsEnumerable = Object.prototype.propertyIsEnumerable;
+
+function toObject(val) {
+	if (val === null || val === undefined) {
+		throw new TypeError('Object.assign cannot be called with null or undefined');
+	}
+
+	return Object(val);
+}
+
+function shouldUseNative() {
+	try {
+		if (!Object.assign) {
+			return false;
+		}
+
+		// Detect buggy property enumeration order in older V8 versions.
+
+		// https://bugs.chromium.org/p/v8/issues/detail?id=4118
+		var test1 = new String('abc');  // eslint-disable-line no-new-wrappers
+		test1[5] = 'de';
+		if (Object.getOwnPropertyNames(test1)[0] === '5') {
+			return false;
+		}
+
+		// https://bugs.chromium.org/p/v8/issues/detail?id=3056
+		var test2 = {};
+		for (var i = 0; i < 10; i++) {
+			test2['_' + String.fromCharCode(i)] = i;
+		}
+		var order2 = Object.getOwnPropertyNames(test2).map(function (n) {
+			return test2[n];
+		});
+		if (order2.join('') !== '0123456789') {
+			return false;
+		}
+
+		// https://bugs.chromium.org/p/v8/issues/detail?id=3056
+		var test3 = {};
+		'abcdefghijklmnopqrst'.split('').forEach(function (letter) {
+			test3[letter] = letter;
+		});
+		if (Object.keys(Object.assign({}, test3)).join('') !==
+				'abcdefghijklmnopqrst') {
+			return false;
+		}
+
+		return true;
+	} catch (err) {
+		// We don't expect any of the above to throw, but better to be safe.
+		return false;
+	}
+}
+
+module.exports = shouldUseNative() ? Object.assign : function (target, source) {
+	var from;
+	var to = toObject(target);
+	var symbols;
+
+	for (var s = 1; s < arguments.length; s++) {
+		from = Object(arguments[s]);
+
+		for (var key in from) {
+			if (hasOwnProperty.call(from, key)) {
+				to[key] = from[key];
+			}
+		}
+
+		if (getOwnPropertySymbols) {
+			symbols = getOwnPropertySymbols(from);
+			for (var i = 0; i < symbols.length; i++) {
+				if (propIsEnumerable.call(from, symbols[i])) {
+					to[symbols[i]] = from[symbols[i]];
+				}
+			}
+		}
+	}
+
+	return to;
+};
+
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/parse-uri/index.js":[function(require,module,exports){
+'use strict'
+
+module.exports = function parseURI (str, opts) {
+  opts = opts || {}
+
+  var o = {
+    key: ['source', 'protocol', 'authority', 'userInfo', 'user', 'password', 'host', 'port', 'relative', 'path', 'directory', 'file', 'query', 'anchor'],
+    q: {
+      name: 'queryKey',
+      parser: /(?:^|&)([^&=]*)=?([^&]*)/g
+    },
+    parser: {
+      strict: /^(?:([^:\/?#]+):)?(?:\/\/((?:(([^:@]*)(?::([^:@]*))?)?@)?([^:\/?#]*)(?::(\d*))?))?((((?:[^?#\/]*\/)*)([^?#]*))(?:\?([^#]*))?(?:#(.*))?)/,
+      loose: /^(?:(?![^:@]+:[^:@\/]*@)([^:\/?#.]+):)?(?:\/\/)?((?:(([^:@]*)(?::([^:@]*))?)?@)?([^:\/?#]*)(?::(\d*))?)(((\/(?:[^?#](?![^?#\/]*\.[^?#\/.]+(?:[?#]|$)))*\/?)?([^?#\/]*))(?:\?([^#]*))?(?:#(.*))?)/
+    }
+  }
+
+  var m = o.parser[opts.strictMode ? 'strict' : 'loose'].exec(str)
+  var uri = {}
+  var i = 14
+
+  while (i--) uri[o.key[i]] = m[i] || ''
+
+  uri[o.q.name] = {}
+  uri[o.key[12]].replace(o.q.parser, function ($0, $1, $2) {
+    if ($1) uri[o.q.name][$1] = $2
+  })
+
+  return uri
+}
+
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/path-browserify/index.js":[function(require,module,exports){
+(function (process){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+// resolves . and .. elements in a path array with directory names there
+// must be no slashes, empty elements, or device names (c:\) in the array
+// (so also no leading and trailing slashes - it does not distinguish
+// relative and absolute paths)
+function normalizeArray(parts, allowAboveRoot) {
+  // if the path tries to go above the root, `up` ends up > 0
+  var up = 0;
+  for (var i = parts.length - 1; i >= 0; i--) {
+    var last = parts[i];
+    if (last === '.') {
+      parts.splice(i, 1);
+    } else if (last === '..') {
+      parts.splice(i, 1);
+      up++;
+    } else if (up) {
+      parts.splice(i, 1);
+      up--;
+    }
+  }
+
+  // if the path is allowed to go above the root, restore leading ..s
+  if (allowAboveRoot) {
+    for (; up--; up) {
+      parts.unshift('..');
+    }
+  }
+
+  return parts;
+}
+
+// Split a filename into [root, dir, basename, ext], unix version
+// 'root' is just a slash, or nothing.
+var splitPathRe =
+    /^(\/?|)([\s\S]*?)((?:\.{1,2}|[^\/]+?|)(\.[^.\/]*|))(?:[\/]*)$/;
+var splitPath = function(filename) {
+  return splitPathRe.exec(filename).slice(1);
+};
+
+// path.resolve([from ...], to)
+// posix version
+exports.resolve = function() {
+  var resolvedPath = '',
+      resolvedAbsolute = false;
+
+  for (var i = arguments.length - 1; i >= -1 && !resolvedAbsolute; i--) {
+    var path = (i >= 0) ? arguments[i] : process.cwd();
+
+    // Skip empty and invalid entries
+    if (typeof path !== 'string') {
+      throw new TypeError('Arguments to path.resolve must be strings');
+    } else if (!path) {
+      continue;
+    }
+
+    resolvedPath = path + '/' + resolvedPath;
+    resolvedAbsolute = path.charAt(0) === '/';
+  }
+
+  // At this point the path should be resolved to a full absolute path, but
+  // handle relative paths to be safe (might happen when process.cwd() fails)
+
+  // Normalize the path
+  resolvedPath = normalizeArray(filter(resolvedPath.split('/'), function(p) {
+    return !!p;
+  }), !resolvedAbsolute).join('/');
+
+  return ((resolvedAbsolute ? '/' : '') + resolvedPath) || '.';
+};
+
+// path.normalize(path)
+// posix version
+exports.normalize = function(path) {
+  var isAbsolute = exports.isAbsolute(path),
+      trailingSlash = substr(path, -1) === '/';
+
+  // Normalize the path
+  path = normalizeArray(filter(path.split('/'), function(p) {
+    return !!p;
+  }), !isAbsolute).join('/');
+
+  if (!path && !isAbsolute) {
+    path = '.';
+  }
+  if (path && trailingSlash) {
+    path += '/';
+  }
+
+  return (isAbsolute ? '/' : '') + path;
+};
+
+// posix version
+exports.isAbsolute = function(path) {
+  return path.charAt(0) === '/';
+};
+
+// posix version
+exports.join = function() {
+  var paths = Array.prototype.slice.call(arguments, 0);
+  return exports.normalize(filter(paths, function(p, index) {
+    if (typeof p !== 'string') {
+      throw new TypeError('Arguments to path.join must be strings');
+    }
+    return p;
+  }).join('/'));
+};
+
+
+// path.relative(from, to)
+// posix version
+exports.relative = function(from, to) {
+  from = exports.resolve(from).substr(1);
+  to = exports.resolve(to).substr(1);
+
+  function trim(arr) {
+    var start = 0;
+    for (; start < arr.length; start++) {
+      if (arr[start] !== '') break;
+    }
+
+    var end = arr.length - 1;
+    for (; end >= 0; end--) {
+      if (arr[end] !== '') break;
+    }
+
+    if (start > end) return [];
+    return arr.slice(start, end - start + 1);
+  }
+
+  var fromParts = trim(from.split('/'));
+  var toParts = trim(to.split('/'));
+
+  var length = Math.min(fromParts.length, toParts.length);
+  var samePartsLength = length;
+  for (var i = 0; i < length; i++) {
+    if (fromParts[i] !== toParts[i]) {
+      samePartsLength = i;
+      break;
+    }
+  }
+
+  var outputParts = [];
+  for (var i = samePartsLength; i < fromParts.length; i++) {
+    outputParts.push('..');
+  }
+
+  outputParts = outputParts.concat(toParts.slice(samePartsLength));
+
+  return outputParts.join('/');
+};
+
+exports.sep = '/';
+exports.delimiter = ':';
+
+exports.dirname = function(path) {
+  var result = splitPath(path),
+      root = result[0],
+      dir = result[1];
+
+  if (!root && !dir) {
+    // No dirname whatsoever
+    return '.';
+  }
+
+  if (dir) {
+    // It has a dirname, strip trailing slash
+    dir = dir.substr(0, dir.length - 1);
+  }
+
+  return root + dir;
+};
+
+
+exports.basename = function(path, ext) {
+  var f = splitPath(path)[2];
+  // TODO: make this comparison case-insensitive on windows?
+  if (ext && f.substr(-1 * ext.length) === ext) {
+    f = f.substr(0, f.length - ext.length);
+  }
+  return f;
+};
+
+
+exports.extname = function(path) {
+  return splitPath(path)[3];
+};
+
+function filter (xs, f) {
+    if (xs.filter) return xs.filter(f);
+    var res = [];
+    for (var i = 0; i < xs.length; i++) {
+        if (f(xs[i], i, xs)) res.push(xs[i]);
+    }
+    return res;
+}
+
+// String.prototype.substr - negative index don't work in IE8
+var substr = 'ab'.substr(-1) === 'b'
+    ? function (str, start, len) { return str.substr(start, len) }
+    : function (str, start, len) {
+        if (start < 0) start = str.length + start;
+        return str.substr(start, len);
+    }
+;
+
+}).call(this,require('_process'))
+
+},{"_process":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/process/browser.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/accessibility/AccessibilityManager.js":[function(require,module,exports){
 var core = require('../core');
 
 // add some extra variables to the container..
@@ -2929,7 +2968,7 @@ core.WebGLRenderer.registerPlugin('accessibility', AccessibilityManager);
 core.CanvasRenderer.registerPlugin('accessibility', AccessibilityManager);
 
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","./accessibleTarget":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/accessibility/accessibleTarget.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/accessibility/accessibleTarget.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","./accessibleTarget":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/accessibility/accessibleTarget.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/accessibility/accessibleTarget.js":[function(require,module,exports){
 /**
  * Default property values of accessible objects
  * used by {@link PIXI.accessibility.AccessibilityManager}.
@@ -2975,7 +3014,7 @@ var accessibleTarget = {
 
 module.exports = accessibleTarget;
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/accessibility/index.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/accessibility/index.js":[function(require,module,exports){
 /**
  * @file        Main export of the PIXI accessibility library
  * @author      Mat Groves <mat@goodboydigital.com>
@@ -2991,7 +3030,7 @@ module.exports = {
     AccessibilityManager: require('./AccessibilityManager')
 };
 
-},{"./AccessibilityManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/accessibility/AccessibilityManager.js","./accessibleTarget":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/accessibility/accessibleTarget.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js":[function(require,module,exports){
+},{"./AccessibilityManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/accessibility/AccessibilityManager.js","./accessibleTarget":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/accessibility/accessibleTarget.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js":[function(require,module,exports){
 /**
  * Constant values used in pixi
  *
@@ -3214,7 +3253,7 @@ var CONST = {
 
 module.exports = CONST;
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/display/Container.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/display/Container.js":[function(require,module,exports){
 var math = require('../math'),
     utils = require('../utils'),
     DisplayObject = require('./DisplayObject'),
@@ -3858,7 +3897,7 @@ Container.prototype.destroy = function (destroyChildren)
     this.children = null;
 };
 
-},{"../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../textures/RenderTexture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/RenderTexture.js","../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","./DisplayObject":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/display/DisplayObject.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/display/DisplayObject.js":[function(require,module,exports){
+},{"../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../textures/RenderTexture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/RenderTexture.js","../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","./DisplayObject":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/display/DisplayObject.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/display/DisplayObject.js":[function(require,module,exports){
 var math = require('../math'),
     RenderTexture = require('../textures/RenderTexture'),
     EventEmitter = require('eventemitter3'),
@@ -4424,7 +4463,7 @@ DisplayObject.prototype.destroy = function ()
     this.filterArea = null;
 };
 
-},{"../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../textures/RenderTexture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/RenderTexture.js","eventemitter3":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/eventemitter3/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/graphics/Graphics.js":[function(require,module,exports){
+},{"../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../textures/RenderTexture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/RenderTexture.js","eventemitter3":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/eventemitter3/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/graphics/Graphics.js":[function(require,module,exports){
 var Container = require('../display/Container'),
     Texture = require('../textures/Texture'),
     CanvasBuffer = require('../renderers/canvas/utils/CanvasBuffer'),
@@ -5609,7 +5648,7 @@ Graphics.prototype.destroy = function () {
     this._localBounds = null;
 };
 
-},{"../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../display/Container":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/display/Container.js","../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../renderers/canvas/utils/CanvasBuffer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasBuffer.js","../renderers/canvas/utils/CanvasGraphics":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasGraphics.js","../textures/Texture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/Texture.js","./GraphicsData":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/graphics/GraphicsData.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/graphics/GraphicsData.js":[function(require,module,exports){
+},{"../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../display/Container":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/display/Container.js","../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../renderers/canvas/utils/CanvasBuffer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasBuffer.js","../renderers/canvas/utils/CanvasGraphics":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasGraphics.js","../textures/Texture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/Texture.js","./GraphicsData":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/graphics/GraphicsData.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/graphics/GraphicsData.js":[function(require,module,exports){
 /**
  * A GraphicsData object.
  *
@@ -5702,7 +5741,7 @@ GraphicsData.prototype.destroy = function () {
     this.shape = null;
 };
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/graphics/webgl/GraphicsRenderer.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/graphics/webgl/GraphicsRenderer.js":[function(require,module,exports){
 var utils = require('../../utils'),
     math = require('../../math'),
     CONST = require('../../const'),
@@ -6607,7 +6646,7 @@ GraphicsRenderer.prototype.buildPoly = function (graphicsData, webGLData)
     return true;
 };
 
-},{"../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../../renderers/webgl/WebGLRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/WebGLRenderer.js","../../renderers/webgl/utils/ObjectRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js","../../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","./WebGLGraphicsData":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/graphics/webgl/WebGLGraphicsData.js","earcut":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/earcut/src/earcut.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/graphics/webgl/WebGLGraphicsData.js":[function(require,module,exports){
+},{"../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../../renderers/webgl/WebGLRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/WebGLRenderer.js","../../renderers/webgl/utils/ObjectRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js","../../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","./WebGLGraphicsData":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/graphics/webgl/WebGLGraphicsData.js","earcut":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/earcut/src/earcut.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/graphics/webgl/WebGLGraphicsData.js":[function(require,module,exports){
 /**
  * An object containing WebGL specific properties to be used by the WebGL renderer
  *
@@ -6725,7 +6764,7 @@ WebGLGraphicsData.prototype.destroy = function () {
     this.glIndices = null;
 };
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js":[function(require,module,exports){
 /**
  * @file        Main export of the PIXI core library
  * @author      Mat Groves <mat@goodboydigital.com>
@@ -6821,7 +6860,7 @@ var core = module.exports = Object.assign(require('./const'), require('./math'),
     }
 });
 
-},{"./const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","./display/Container":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/display/Container.js","./display/DisplayObject":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/display/DisplayObject.js","./graphics/Graphics":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/graphics/Graphics.js","./graphics/GraphicsData":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/graphics/GraphicsData.js","./graphics/webgl/GraphicsRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/graphics/webgl/GraphicsRenderer.js","./math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","./particles/ParticleContainer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/particles/ParticleContainer.js","./particles/webgl/ParticleRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/particles/webgl/ParticleRenderer.js","./renderers/canvas/CanvasRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/CanvasRenderer.js","./renderers/canvas/utils/CanvasBuffer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasBuffer.js","./renderers/canvas/utils/CanvasGraphics":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasGraphics.js","./renderers/webgl/WebGLRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/WebGLRenderer.js","./renderers/webgl/filters/AbstractFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/filters/AbstractFilter.js","./renderers/webgl/filters/FXAAFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/filters/FXAAFilter.js","./renderers/webgl/filters/SpriteMaskFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/filters/SpriteMaskFilter.js","./renderers/webgl/managers/ShaderManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/ShaderManager.js","./renderers/webgl/managers/WebGLManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js","./renderers/webgl/shaders/ComplexPrimitiveShader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/ComplexPrimitiveShader.js","./renderers/webgl/shaders/PrimitiveShader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/PrimitiveShader.js","./renderers/webgl/shaders/Shader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/Shader.js","./renderers/webgl/shaders/TextureShader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/TextureShader.js","./renderers/webgl/utils/ObjectRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js","./renderers/webgl/utils/RenderTarget":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/RenderTarget.js","./sprites/Sprite":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/sprites/Sprite.js","./sprites/webgl/SpriteRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/sprites/webgl/SpriteRenderer.js","./text/Text":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/text/Text.js","./textures/BaseTexture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/BaseTexture.js","./textures/RenderTexture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/RenderTexture.js","./textures/Texture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/Texture.js","./textures/TextureUvs":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/TextureUvs.js","./textures/VideoBaseTexture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/VideoBaseTexture.js","./ticker":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/ticker/index.js","./utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/GroupD8.js":[function(require,module,exports){
+},{"./const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","./display/Container":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/display/Container.js","./display/DisplayObject":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/display/DisplayObject.js","./graphics/Graphics":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/graphics/Graphics.js","./graphics/GraphicsData":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/graphics/GraphicsData.js","./graphics/webgl/GraphicsRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/graphics/webgl/GraphicsRenderer.js","./math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","./particles/ParticleContainer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/particles/ParticleContainer.js","./particles/webgl/ParticleRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/particles/webgl/ParticleRenderer.js","./renderers/canvas/CanvasRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/CanvasRenderer.js","./renderers/canvas/utils/CanvasBuffer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasBuffer.js","./renderers/canvas/utils/CanvasGraphics":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasGraphics.js","./renderers/webgl/WebGLRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/WebGLRenderer.js","./renderers/webgl/filters/AbstractFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/filters/AbstractFilter.js","./renderers/webgl/filters/FXAAFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/filters/FXAAFilter.js","./renderers/webgl/filters/SpriteMaskFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/filters/SpriteMaskFilter.js","./renderers/webgl/managers/ShaderManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/ShaderManager.js","./renderers/webgl/managers/WebGLManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js","./renderers/webgl/shaders/ComplexPrimitiveShader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/ComplexPrimitiveShader.js","./renderers/webgl/shaders/PrimitiveShader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/PrimitiveShader.js","./renderers/webgl/shaders/Shader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/Shader.js","./renderers/webgl/shaders/TextureShader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/TextureShader.js","./renderers/webgl/utils/ObjectRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js","./renderers/webgl/utils/RenderTarget":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/RenderTarget.js","./sprites/Sprite":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/sprites/Sprite.js","./sprites/webgl/SpriteRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/sprites/webgl/SpriteRenderer.js","./text/Text":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/text/Text.js","./textures/BaseTexture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/BaseTexture.js","./textures/RenderTexture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/RenderTexture.js","./textures/Texture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/Texture.js","./textures/TextureUvs":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/TextureUvs.js","./textures/VideoBaseTexture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/VideoBaseTexture.js","./ticker":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/ticker/index.js","./utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/GroupD8.js":[function(require,module,exports){
 // Your friendly neighbour https://en.wikipedia.org/wiki/Dihedral_group of order 16
 
 var ux = [1, 1, 0, -1, -1, -1, 0, 1, 1, 1, 0, -1, -1, -1, 0, 1];
@@ -6985,7 +7024,7 @@ var GroupD8 = {
 
 module.exports = GroupD8;
 
-},{"./Matrix":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/Matrix.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/Matrix.js":[function(require,module,exports){
+},{"./Matrix":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/Matrix.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/Matrix.js":[function(require,module,exports){
 // @todo - ignore the too many parameters warning for now
 // should either fix it or change the jshint config
 // jshint -W072
@@ -7425,7 +7464,7 @@ Matrix.IDENTITY = new Matrix();
  */
 Matrix.TEMP_MATRIX = new Matrix();
 
-},{"./Point":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/Point.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/Point.js":[function(require,module,exports){
+},{"./Point":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/Point.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/Point.js":[function(require,module,exports){
 /**
  * The Point object represents a location in a two-dimensional coordinate system, where x represents
  * the horizontal axis and y represents the vertical axis.
@@ -7495,7 +7534,7 @@ Point.prototype.set = function (x, y)
     this.y = y || ( (y !== 0) ? this.x : 0 ) ;
 };
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js":[function(require,module,exports){
 /**
  * Math classes and utilities mixed into PIXI namespace.
  *
@@ -7518,7 +7557,7 @@ module.exports = {
     RoundedRectangle: require('./shapes/RoundedRectangle')
 };
 
-},{"./GroupD8":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/GroupD8.js","./Matrix":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/Matrix.js","./Point":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/Point.js","./shapes/Circle":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/Circle.js","./shapes/Ellipse":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/Ellipse.js","./shapes/Polygon":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/Polygon.js","./shapes/Rectangle":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/Rectangle.js","./shapes/RoundedRectangle":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/RoundedRectangle.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/Circle.js":[function(require,module,exports){
+},{"./GroupD8":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/GroupD8.js","./Matrix":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/Matrix.js","./Point":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/Point.js","./shapes/Circle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/Circle.js","./shapes/Ellipse":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/Ellipse.js","./shapes/Polygon":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/Polygon.js","./shapes/Rectangle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/Rectangle.js","./shapes/RoundedRectangle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/RoundedRectangle.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/Circle.js":[function(require,module,exports){
 var Rectangle = require('./Rectangle'),
     CONST = require('../../const');
 
@@ -7606,7 +7645,7 @@ Circle.prototype.getBounds = function ()
     return new Rectangle(this.x - this.radius, this.y - this.radius, this.radius * 2, this.radius * 2);
 };
 
-},{"../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","./Rectangle":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/Rectangle.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/Ellipse.js":[function(require,module,exports){
+},{"../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","./Rectangle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/Rectangle.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/Ellipse.js":[function(require,module,exports){
 var Rectangle = require('./Rectangle'),
     CONST = require('../../const');
 
@@ -7701,7 +7740,7 @@ Ellipse.prototype.getBounds = function ()
     return new Rectangle(this.x - this.width, this.y - this.height, this.width, this.height);
 };
 
-},{"../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","./Rectangle":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/Rectangle.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/Polygon.js":[function(require,module,exports){
+},{"../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","./Rectangle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/Rectangle.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/Polygon.js":[function(require,module,exports){
 var Point = require('../Point'),
     CONST = require('../../const');
 
@@ -7804,7 +7843,7 @@ Polygon.prototype.contains = function (x, y)
     return inside;
 };
 
-},{"../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../Point":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/Point.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/Rectangle.js":[function(require,module,exports){
+},{"../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../Point":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/Point.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/Rectangle.js":[function(require,module,exports){
 var CONST = require('../../const');
 
 /**
@@ -7898,7 +7937,7 @@ Rectangle.prototype.contains = function (x, y)
     return false;
 };
 
-},{"../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/shapes/RoundedRectangle.js":[function(require,module,exports){
+},{"../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/shapes/RoundedRectangle.js":[function(require,module,exports){
 var CONST = require('../../const');
 
 /**
@@ -7990,7 +8029,7 @@ RoundedRectangle.prototype.contains = function (x, y)
     return false;
 };
 
-},{"../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/particles/ParticleContainer.js":[function(require,module,exports){
+},{"../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/particles/ParticleContainer.js":[function(require,module,exports){
 var Container = require('../display/Container'),
     CONST = require('../const');
 
@@ -8309,7 +8348,7 @@ ParticleContainer.prototype.destroy = function () {
     this._buffers = null;
 };
 
-},{"../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../display/Container":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/display/Container.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/particles/webgl/ParticleBuffer.js":[function(require,module,exports){
+},{"../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../display/Container":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/display/Container.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/particles/webgl/ParticleBuffer.js":[function(require,module,exports){
 
 /**
  * @author Mat Groves
@@ -8529,7 +8568,7 @@ ParticleBuffer.prototype.destroy = function ()
     this.gl.deleteBuffer(this.staticBuffer);
 };
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/particles/webgl/ParticleRenderer.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/particles/webgl/ParticleRenderer.js":[function(require,module,exports){
 var ObjectRenderer = require('../../renderers/webgl/utils/ObjectRenderer'),
     WebGLRenderer = require('../../renderers/webgl/WebGLRenderer'),
     ParticleShader = require('./ParticleShader'),
@@ -9005,7 +9044,7 @@ ParticleRenderer.prototype.destroy = function ()
     this.tempMatrix = null;
 };
 
-},{"../../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../../renderers/webgl/WebGLRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/WebGLRenderer.js","../../renderers/webgl/utils/ObjectRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js","./ParticleBuffer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/particles/webgl/ParticleBuffer.js","./ParticleShader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/particles/webgl/ParticleShader.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/particles/webgl/ParticleShader.js":[function(require,module,exports){
+},{"../../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../../renderers/webgl/WebGLRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/WebGLRenderer.js","../../renderers/webgl/utils/ObjectRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js","./ParticleBuffer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/particles/webgl/ParticleBuffer.js","./ParticleShader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/particles/webgl/ParticleShader.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/particles/webgl/ParticleShader.js":[function(require,module,exports){
 var TextureShader = require('../../renderers/webgl/shaders/TextureShader');
 
 /**
@@ -9083,7 +9122,7 @@ ParticleShader.prototype.constructor = ParticleShader;
 
 module.exports = ParticleShader;
 
-},{"../../renderers/webgl/shaders/TextureShader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/TextureShader.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/SystemRenderer.js":[function(require,module,exports){
+},{"../../renderers/webgl/shaders/TextureShader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/TextureShader.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/SystemRenderer.js":[function(require,module,exports){
 var utils = require('../utils'),
     math = require('../math'),
     CONST = require('../const'),
@@ -9344,7 +9383,7 @@ SystemRenderer.prototype.destroy = function (removeView) {
     this._backgroundColorString = null;
 };
 
-},{"../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","eventemitter3":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/eventemitter3/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/CanvasRenderer.js":[function(require,module,exports){
+},{"../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","eventemitter3":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/eventemitter3/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/CanvasRenderer.js":[function(require,module,exports){
 var SystemRenderer = require('../SystemRenderer'),
     CanvasMaskManager = require('./utils/CanvasMaskManager'),
     utils = require('../../utils'),
@@ -9612,7 +9651,7 @@ CanvasRenderer.prototype._mapBlendModes = function ()
     }
 };
 
-},{"../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","../SystemRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/SystemRenderer.js","./utils/CanvasMaskManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasMaskManager.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasBuffer.js":[function(require,module,exports){
+},{"../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","../SystemRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/SystemRenderer.js","./utils/CanvasMaskManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasMaskManager.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasBuffer.js":[function(require,module,exports){
 /**
  * Creates a Canvas element of the given size.
  *
@@ -9712,7 +9751,7 @@ CanvasBuffer.prototype.destroy = function ()
     this.canvas = null;
 };
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasGraphics.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasGraphics.js":[function(require,module,exports){
 var CONST = require('../../../const');
 
 /**
@@ -10066,7 +10105,7 @@ CanvasGraphics.updateGraphicsTint = function (graphics)
 };
 
 
-},{"../../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasMaskManager.js":[function(require,module,exports){
+},{"../../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasMaskManager.js":[function(require,module,exports){
 var CanvasGraphics = require('./CanvasGraphics');
 
 /**
@@ -10128,7 +10167,7 @@ CanvasMaskManager.prototype.popMask = function (renderer)
 
 CanvasMaskManager.prototype.destroy = function () {};
 
-},{"./CanvasGraphics":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasGraphics.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasTinter.js":[function(require,module,exports){
+},{"./CanvasGraphics":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasGraphics.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasTinter.js":[function(require,module,exports){
 var utils = require('../../../utils');
 
 /**
@@ -10380,7 +10419,7 @@ CanvasTinter.canUseMultiply = utils.canUseNewCanvasBlendModes();
  */
 CanvasTinter.tintMethod = CanvasTinter.canUseMultiply ? CanvasTinter.tintWithMultiply :  CanvasTinter.tintWithPerPixel;
 
-},{"../../../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/WebGLRenderer.js":[function(require,module,exports){
+},{"../../../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/WebGLRenderer.js":[function(require,module,exports){
 var SystemRenderer = require('../SystemRenderer'),
     ShaderManager = require('./managers/ShaderManager'),
     MaskManager = require('./managers/MaskManager'),
@@ -10970,7 +11009,7 @@ WebGLRenderer.prototype._mapGlModes = function ()
     }
 };
 
-},{"../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","../SystemRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/SystemRenderer.js","./filters/FXAAFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/filters/FXAAFilter.js","./managers/BlendModeManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/BlendModeManager.js","./managers/FilterManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/FilterManager.js","./managers/MaskManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/MaskManager.js","./managers/ShaderManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/ShaderManager.js","./managers/StencilManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/StencilManager.js","./utils/ObjectRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js","./utils/RenderTarget":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/RenderTarget.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/filters/AbstractFilter.js":[function(require,module,exports){
+},{"../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","../SystemRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/SystemRenderer.js","./filters/FXAAFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/filters/FXAAFilter.js","./managers/BlendModeManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/BlendModeManager.js","./managers/FilterManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/FilterManager.js","./managers/MaskManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/MaskManager.js","./managers/ShaderManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/ShaderManager.js","./managers/StencilManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/StencilManager.js","./utils/ObjectRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js","./utils/RenderTarget":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/RenderTarget.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/filters/AbstractFilter.js":[function(require,module,exports){
 var DefaultShader = require('../shaders/TextureShader');
 
 /**
@@ -11082,7 +11121,7 @@ AbstractFilter.prototype.syncUniform = function (uniform)
     }
 };
 
-},{"../shaders/TextureShader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/TextureShader.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/filters/FXAAFilter.js":[function(require,module,exports){
+},{"../shaders/TextureShader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/TextureShader.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/filters/FXAAFilter.js":[function(require,module,exports){
 var AbstractFilter = require('./AbstractFilter');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -11137,7 +11176,7 @@ FXAAFilter.prototype.applyFilter = function (renderer, input, output)
     filterManager.applyFilter(shader, input, output);
 };
 
-},{"./AbstractFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/filters/AbstractFilter.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/filters/SpriteMaskFilter.js":[function(require,module,exports){
+},{"./AbstractFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/filters/AbstractFilter.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/filters/SpriteMaskFilter.js":[function(require,module,exports){
 var AbstractFilter = require('./AbstractFilter'),
     math =  require('../../../math');
 
@@ -11234,7 +11273,7 @@ Object.defineProperties(SpriteMaskFilter.prototype, {
     }
 });
 
-},{"../../../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","./AbstractFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/filters/AbstractFilter.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/BlendModeManager.js":[function(require,module,exports){
+},{"../../../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","./AbstractFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/filters/AbstractFilter.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/BlendModeManager.js":[function(require,module,exports){
 var WebGLManager = require('./WebGLManager');
 
 /**
@@ -11278,7 +11317,7 @@ BlendModeManager.prototype.setBlendMode = function (blendMode)
     return true;
 };
 
-},{"./WebGLManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/FilterManager.js":[function(require,module,exports){
+},{"./WebGLManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/FilterManager.js":[function(require,module,exports){
 var WebGLManager = require('./WebGLManager'),
     RenderTarget = require('../utils/RenderTarget'),
     CONST = require('../../../const'),
@@ -11730,7 +11769,7 @@ FilterManager.prototype.destroy = function ()
     this.texturePool = null;
 };
 
-},{"../../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../../../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../utils/Quad":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/Quad.js","../utils/RenderTarget":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/RenderTarget.js","./WebGLManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/MaskManager.js":[function(require,module,exports){
+},{"../../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../../../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../utils/Quad":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/Quad.js","../utils/RenderTarget":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/RenderTarget.js","./WebGLManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/MaskManager.js":[function(require,module,exports){
 var WebGLManager = require('./WebGLManager'),
     AlphaMaskFilter = require('../filters/SpriteMaskFilter');
 
@@ -11845,7 +11884,7 @@ MaskManager.prototype.popStencilMask = function (target, maskData)
 };
 
 
-},{"../filters/SpriteMaskFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/filters/SpriteMaskFilter.js","./WebGLManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/ShaderManager.js":[function(require,module,exports){
+},{"../filters/SpriteMaskFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/filters/SpriteMaskFilter.js","./WebGLManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/ShaderManager.js":[function(require,module,exports){
 var WebGLManager = require('./WebGLManager'),
     TextureShader = require('../shaders/TextureShader'),
     ComplexPrimitiveShader = require('../shaders/ComplexPrimitiveShader'),
@@ -12014,7 +12053,7 @@ ShaderManager.prototype.destroy = function ()
     this.tempAttribState = null;
 };
 
-},{"../../../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","../shaders/ComplexPrimitiveShader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/ComplexPrimitiveShader.js","../shaders/PrimitiveShader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/PrimitiveShader.js","../shaders/TextureShader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/TextureShader.js","./WebGLManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/StencilManager.js":[function(require,module,exports){
+},{"../../../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","../shaders/ComplexPrimitiveShader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/ComplexPrimitiveShader.js","../shaders/PrimitiveShader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/PrimitiveShader.js","../shaders/TextureShader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/TextureShader.js","./WebGLManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/StencilManager.js":[function(require,module,exports){
 var WebGLManager = require('./WebGLManager'),
     utils = require('../../../utils');
 
@@ -12360,7 +12399,7 @@ WebGLMaskManager.prototype.popMask = function (maskData)
 };
 
 
-},{"../../../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","./WebGLManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js":[function(require,module,exports){
+},{"../../../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","./WebGLManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js":[function(require,module,exports){
 /**
  * @class
  * @memberof PIXI
@@ -12401,7 +12440,7 @@ WebGLManager.prototype.destroy = function ()
     this.renderer = null;
 };
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/ComplexPrimitiveShader.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/ComplexPrimitiveShader.js":[function(require,module,exports){
 var Shader = require('./Shader');
 
 /**
@@ -12463,7 +12502,7 @@ ComplexPrimitiveShader.prototype = Object.create(Shader.prototype);
 ComplexPrimitiveShader.prototype.constructor = ComplexPrimitiveShader;
 module.exports = ComplexPrimitiveShader;
 
-},{"./Shader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/Shader.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/PrimitiveShader.js":[function(require,module,exports){
+},{"./Shader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/Shader.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/PrimitiveShader.js":[function(require,module,exports){
 var Shader = require('./Shader');
 
 /**
@@ -12526,7 +12565,7 @@ PrimitiveShader.prototype = Object.create(Shader.prototype);
 PrimitiveShader.prototype.constructor = PrimitiveShader;
 module.exports = PrimitiveShader;
 
-},{"./Shader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/Shader.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/Shader.js":[function(require,module,exports){
+},{"./Shader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/Shader.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/Shader.js":[function(require,module,exports){
 /*global console */
 var utils = require('../../../utils');
 
@@ -13090,7 +13129,7 @@ Shader.prototype._glCompile = function (type, src)
     return shader;
 };
 
-},{"../../../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/TextureShader.js":[function(require,module,exports){
+},{"../../../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/TextureShader.js":[function(require,module,exports){
 var Shader = require('./Shader');
 
 /**
@@ -13201,7 +13240,7 @@ TextureShader.defaultFragmentSrc = [
     '}'
 ].join('\n');
 
-},{"./Shader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/shaders/Shader.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js":[function(require,module,exports){
+},{"./Shader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/shaders/Shader.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js":[function(require,module,exports){
 var WebGLManager = require('../managers/WebGLManager');
 
 /**
@@ -13259,7 +13298,7 @@ ObjectRenderer.prototype.render = function (object) // jshint unused:false
     // render the object
 };
 
-},{"../managers/WebGLManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/Quad.js":[function(require,module,exports){
+},{"../managers/WebGLManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/WebGLManager.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/Quad.js":[function(require,module,exports){
 /**
  * Helper class to create a quad
  *
@@ -13414,7 +13453,7 @@ module.exports = Quad;
 
 
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/RenderTarget.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/RenderTarget.js":[function(require,module,exports){
 var math = require('../../../math'),
     utils = require('../../../utils'),
     CONST = require('../../../const'),
@@ -13736,7 +13775,7 @@ RenderTarget.prototype.destroy = function ()
     this.texture = null;
 };
 
-},{"../../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../../../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../../../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","./StencilMaskStack":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/StencilMaskStack.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/StencilMaskStack.js":[function(require,module,exports){
+},{"../../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../../../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../../../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","./StencilMaskStack":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/StencilMaskStack.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/StencilMaskStack.js":[function(require,module,exports){
 /**
  * Generic Mask Stack data structure
  * @class
@@ -13769,7 +13808,7 @@ function StencilMaskStack()
 StencilMaskStack.prototype.constructor = StencilMaskStack;
 module.exports = StencilMaskStack;
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/sprites/Sprite.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/sprites/Sprite.js":[function(require,module,exports){
 var math = require('../math'),
     Texture = require('../textures/Texture'),
     Container = require('../display/Container'),
@@ -14337,7 +14376,7 @@ Sprite.fromImage = function (imageId, crossorigin, scaleMode)
     return new Sprite(Texture.fromImage(imageId, crossorigin, scaleMode));
 };
 
-},{"../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../display/Container":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/display/Container.js","../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../renderers/canvas/utils/CanvasTinter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasTinter.js","../textures/Texture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/Texture.js","../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/sprites/webgl/SpriteRenderer.js":[function(require,module,exports){
+},{"../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../display/Container":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/display/Container.js","../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../renderers/canvas/utils/CanvasTinter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasTinter.js","../textures/Texture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/Texture.js","../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/sprites/webgl/SpriteRenderer.js":[function(require,module,exports){
 var ObjectRenderer = require('../../renderers/webgl/utils/ObjectRenderer'),
     WebGLRenderer = require('../../renderers/webgl/WebGLRenderer'),
     CONST = require('../../const');
@@ -14810,7 +14849,7 @@ SpriteRenderer.prototype.destroy = function ()
     this.shader = null;
 };
 
-},{"../../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../../renderers/webgl/WebGLRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/WebGLRenderer.js","../../renderers/webgl/utils/ObjectRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/text/Text.js":[function(require,module,exports){
+},{"../../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../../renderers/webgl/WebGLRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/WebGLRenderer.js","../../renderers/webgl/utils/ObjectRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/ObjectRenderer.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/text/Text.js":[function(require,module,exports){
 var Sprite = require('../sprites/Sprite'),
     Texture = require('../textures/Texture'),
     math = require('../math'),
@@ -15507,7 +15546,7 @@ Text.prototype.destroy = function (destroyBaseTexture)
     this._texture.destroy(destroyBaseTexture === undefined ? true : destroyBaseTexture);
 };
 
-},{"../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../sprites/Sprite":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/sprites/Sprite.js","../textures/Texture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/Texture.js","../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/BaseTexture.js":[function(require,module,exports){
+},{"../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../sprites/Sprite":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/sprites/Sprite.js","../textures/Texture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/Texture.js","../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/BaseTexture.js":[function(require,module,exports){
 var utils = require('../utils'),
     CONST = require('../const'),
     EventEmitter = require('eventemitter3');
@@ -15943,7 +15982,7 @@ BaseTexture.fromCanvas = function (canvas, scaleMode)
     return baseTexture;
 };
 
-},{"../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","eventemitter3":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/eventemitter3/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/RenderTexture.js":[function(require,module,exports){
+},{"../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","eventemitter3":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/eventemitter3/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/RenderTexture.js":[function(require,module,exports){
 var BaseTexture = require('./BaseTexture'),
     Texture = require('./Texture'),
     RenderTarget = require('../renderers/webgl/utils/RenderTarget'),
@@ -16422,7 +16461,7 @@ RenderTexture.prototype.getPixel = function (x, y)
     }
 };
 
-},{"../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../renderers/canvas/utils/CanvasBuffer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasBuffer.js","../renderers/webgl/managers/FilterManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/managers/FilterManager.js","../renderers/webgl/utils/RenderTarget":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/webgl/utils/RenderTarget.js","./BaseTexture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/BaseTexture.js","./Texture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/Texture.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/Texture.js":[function(require,module,exports){
+},{"../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../renderers/canvas/utils/CanvasBuffer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasBuffer.js","../renderers/webgl/managers/FilterManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/managers/FilterManager.js","../renderers/webgl/utils/RenderTarget":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/webgl/utils/RenderTarget.js","./BaseTexture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/BaseTexture.js","./Texture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/Texture.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/Texture.js":[function(require,module,exports){
 var BaseTexture = require('./BaseTexture'),
     VideoBaseTexture = require('./VideoBaseTexture'),
     TextureUvs = require('./TextureUvs'),
@@ -16874,7 +16913,7 @@ Texture.removeTextureFromCache = function (id)
  */
 Texture.EMPTY = new Texture(new BaseTexture());
 
-},{"../math":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/index.js","../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","./BaseTexture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/BaseTexture.js","./TextureUvs":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/TextureUvs.js","./VideoBaseTexture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/VideoBaseTexture.js","eventemitter3":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/eventemitter3/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/TextureUvs.js":[function(require,module,exports){
+},{"../math":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/index.js","../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","./BaseTexture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/BaseTexture.js","./TextureUvs":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/TextureUvs.js","./VideoBaseTexture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/VideoBaseTexture.js","eventemitter3":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/eventemitter3/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/TextureUvs.js":[function(require,module,exports){
 
 /**
  * A standard object to store the Uvs of a texture
@@ -16953,7 +16992,7 @@ TextureUvs.prototype.set = function (frame, baseFrame, rotate)
     }
 };
 
-},{"../math/GroupD8":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/math/GroupD8.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/VideoBaseTexture.js":[function(require,module,exports){
+},{"../math/GroupD8":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/math/GroupD8.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/VideoBaseTexture.js":[function(require,module,exports){
 var BaseTexture = require('./BaseTexture'),
     utils = require('../utils');
 
@@ -17190,7 +17229,7 @@ function createSource(path, type)
     return source;
 }
 
-},{"../utils":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js","./BaseTexture":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/textures/BaseTexture.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/ticker/Ticker.js":[function(require,module,exports){
+},{"../utils":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js","./BaseTexture":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/textures/BaseTexture.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/ticker/Ticker.js":[function(require,module,exports){
 var CONST = require('../const'),
     EventEmitter = require('eventemitter3'),
     // Internal event used by composed emitter
@@ -17545,7 +17584,7 @@ Ticker.prototype.update = function update(currentTime)
 
 module.exports = Ticker;
 
-},{"../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","eventemitter3":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/eventemitter3/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/ticker/index.js":[function(require,module,exports){
+},{"../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","eventemitter3":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/eventemitter3/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/ticker/index.js":[function(require,module,exports){
 var Ticker = require('./Ticker');
 
 /**
@@ -17601,7 +17640,7 @@ module.exports = {
     Ticker: Ticker
 };
 
-},{"./Ticker":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/ticker/Ticker.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/index.js":[function(require,module,exports){
+},{"./Ticker":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/ticker/Ticker.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/index.js":[function(require,module,exports){
 var CONST = require('../const');
 
 /**
@@ -17878,7 +17917,7 @@ var utils = module.exports = {
     BaseTextureCache: {}
 };
 
-},{"../const":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/const.js","./pluginTarget":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/pluginTarget.js","async":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/node_modules/async/lib/async.js","eventemitter3":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/eventemitter3/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/utils/pluginTarget.js":[function(require,module,exports){
+},{"../const":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/const.js","./pluginTarget":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/pluginTarget.js","async":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/async/lib/async.js","eventemitter3":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/eventemitter3/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/utils/pluginTarget.js":[function(require,module,exports){
 /**
  * Mixins functionality to make an object have "plugins".
  *
@@ -17948,7 +17987,7 @@ module.exports = {
     }
 };
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/deprecation.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/deprecation.js":[function(require,module,exports){
 /*global console */
 var core = require('./core'),
     mesh = require('./mesh'),
@@ -18299,7 +18338,7 @@ core.utils.uuid = function ()
     return core.utils.uid();
 };
 
-},{"./core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","./extras":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/index.js","./filters":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/index.js","./mesh":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/BitmapText.js":[function(require,module,exports){
+},{"./core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","./extras":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/index.js","./filters":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/index.js","./mesh":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/BitmapText.js":[function(require,module,exports){
 var core = require('../core');
 
 /**
@@ -18687,7 +18726,7 @@ BitmapText.prototype.validate = function()
 
 BitmapText.fonts = {};
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/MovieClip.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/MovieClip.js":[function(require,module,exports){
 var core = require('../core');
 
 /**
@@ -19007,7 +19046,7 @@ MovieClip.fromImages = function (images)
 
     return new MovieClip(textures);
 };
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/TilingSprite.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/TilingSprite.js":[function(require,module,exports){
 var core = require('../core'),
     // a sprite use dfor rendering textures..
     tempPoint = new core.Point(),
@@ -19459,7 +19498,7 @@ TilingSprite.fromImage = function (imageId, width, height, crossorigin, scaleMod
     return new TilingSprite(core.Texture.fromImage(imageId, crossorigin, scaleMode),width,height);
 };
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","../core/renderers/canvas/utils/CanvasTinter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasTinter.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/cacheAsBitmap.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","../core/renderers/canvas/utils/CanvasTinter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/renderers/canvas/utils/CanvasTinter.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/cacheAsBitmap.js":[function(require,module,exports){
 var core = require('../core'),
     DisplayObject = core.DisplayObject,
     _tempMatrix = new core.Matrix();
@@ -19731,7 +19770,7 @@ DisplayObject.prototype._cacheAsBitmapDestroy = function ()
     this._originalDestroy();
 };
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/getChildByName.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/getChildByName.js":[function(require,module,exports){
 var core = require('../core');
 
 /**
@@ -19761,7 +19800,7 @@ core.Container.prototype.getChildByName = function (name)
     return null;
 };
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/getGlobalPosition.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/getGlobalPosition.js":[function(require,module,exports){
 var core = require('../core');
 
 /**
@@ -19791,7 +19830,7 @@ core.DisplayObject.prototype.getGlobalPosition = function (point)
     return point;
 };
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/index.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/index.js":[function(require,module,exports){
 /**
  * @file        Main export of the PIXI extras library
  * @author      Mat Groves <mat@goodboydigital.com>
@@ -19812,7 +19851,7 @@ module.exports = {
     BitmapText:     require('./BitmapText')
 };
 
-},{"./BitmapText":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/BitmapText.js","./MovieClip":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/MovieClip.js","./TilingSprite":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/TilingSprite.js","./cacheAsBitmap":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/cacheAsBitmap.js","./getChildByName":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/getChildByName.js","./getGlobalPosition":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/getGlobalPosition.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/ascii/AsciiFilter.js":[function(require,module,exports){
+},{"./BitmapText":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/BitmapText.js","./MovieClip":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/MovieClip.js","./TilingSprite":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/TilingSprite.js","./cacheAsBitmap":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/cacheAsBitmap.js","./getChildByName":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/getChildByName.js","./getGlobalPosition":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/getGlobalPosition.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/ascii/AsciiFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -19869,7 +19908,7 @@ Object.defineProperties(AsciiFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/bloom/BloomFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/bloom/BloomFilter.js":[function(require,module,exports){
 var core = require('../../core'),
     BlurXFilter = require('../blur/BlurXFilter'),
     BlurYFilter = require('../blur/BlurYFilter');
@@ -19970,7 +20009,7 @@ Object.defineProperties(BloomFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","../blur/BlurXFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurXFilter.js","../blur/BlurYFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurYFilter.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurDirFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","../blur/BlurXFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurXFilter.js","../blur/BlurYFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurYFilter.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurDirFilter.js":[function(require,module,exports){
 var core = require('../../core');
 
 
@@ -20112,7 +20151,7 @@ Object.defineProperties(BlurDirFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurFilter.js":[function(require,module,exports){
 var core = require('../../core'),
     BlurXFilter = require('./BlurXFilter'),
     BlurYFilter = require('./BlurYFilter');
@@ -20222,7 +20261,7 @@ Object.defineProperties(BlurFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","./BlurXFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurXFilter.js","./BlurYFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurYFilter.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurXFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","./BlurXFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurXFilter.js","./BlurYFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurYFilter.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurXFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -20315,7 +20354,7 @@ Object.defineProperties(BlurXFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurYFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurYFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -20401,7 +20440,7 @@ Object.defineProperties(BlurYFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/SmartBlurFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/SmartBlurFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -20431,7 +20470,7 @@ SmartBlurFilter.prototype = Object.create(core.AbstractFilter.prototype);
 SmartBlurFilter.prototype.constructor = SmartBlurFilter;
 module.exports = SmartBlurFilter;
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/color/ColorMatrixFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/color/ColorMatrixFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -20967,7 +21006,7 @@ Object.defineProperties(ColorMatrixFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/color/ColorStepFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/color/ColorStepFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21016,7 +21055,7 @@ Object.defineProperties(ColorStepFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/convolution/ConvolutionFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/convolution/ConvolutionFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21107,7 +21146,7 @@ Object.defineProperties(ConvolutionFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/crosshatch/CrossHatchFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/crosshatch/CrossHatchFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21133,7 +21172,7 @@ CrossHatchFilter.prototype = Object.create(core.AbstractFilter.prototype);
 CrossHatchFilter.prototype.constructor = CrossHatchFilter;
 module.exports = CrossHatchFilter;
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/displacement/DisplacementFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/displacement/DisplacementFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21217,7 +21256,7 @@ Object.defineProperties(DisplacementFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/dot/DotScreenFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/dot/DotScreenFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21289,7 +21328,7 @@ Object.defineProperties(DotScreenFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/dropshadow/BlurYTintFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/dropshadow/BlurYTintFilter.js":[function(require,module,exports){
 var core = require('../../core');
 
 // @see https://github.com/substack/brfs/issues/25
@@ -21380,7 +21419,7 @@ Object.defineProperties(BlurYTintFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/dropshadow/DropShadowFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/dropshadow/DropShadowFilter.js":[function(require,module,exports){
 var core = require('../../core'),
     BlurXFilter = require('../blur/BlurXFilter'),
     BlurYTintFilter = require('./BlurYTintFilter');
@@ -21573,7 +21612,7 @@ Object.defineProperties(DropShadowFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","../blur/BlurXFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurXFilter.js","./BlurYTintFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/dropshadow/BlurYTintFilter.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/gray/GrayFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","../blur/BlurXFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurXFilter.js","./BlurYTintFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/dropshadow/BlurYTintFilter.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/gray/GrayFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21622,7 +21661,7 @@ Object.defineProperties(GrayFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/index.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/index.js":[function(require,module,exports){
 /**
  * @file        Main export of the PIXI filters library
  * @author      Mat Groves <mat@goodboydigital.com>
@@ -21661,7 +21700,7 @@ module.exports = {
     TwistFilter:        require('./twist/TwistFilter')
 };
 
-},{"./ascii/AsciiFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/ascii/AsciiFilter.js","./bloom/BloomFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/bloom/BloomFilter.js","./blur/BlurDirFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurDirFilter.js","./blur/BlurFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurFilter.js","./blur/BlurXFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurXFilter.js","./blur/BlurYFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/BlurYFilter.js","./blur/SmartBlurFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/blur/SmartBlurFilter.js","./color/ColorMatrixFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/color/ColorMatrixFilter.js","./color/ColorStepFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/color/ColorStepFilter.js","./convolution/ConvolutionFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/convolution/ConvolutionFilter.js","./crosshatch/CrossHatchFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/crosshatch/CrossHatchFilter.js","./displacement/DisplacementFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/displacement/DisplacementFilter.js","./dot/DotScreenFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/dot/DotScreenFilter.js","./dropshadow/DropShadowFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/dropshadow/DropShadowFilter.js","./gray/GrayFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/gray/GrayFilter.js","./invert/InvertFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/invert/InvertFilter.js","./noise/NoiseFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/noise/NoiseFilter.js","./pixelate/PixelateFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/pixelate/PixelateFilter.js","./rgb/RGBSplitFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/rgb/RGBSplitFilter.js","./sepia/SepiaFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/sepia/SepiaFilter.js","./shockwave/ShockwaveFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/shockwave/ShockwaveFilter.js","./tiltshift/TiltShiftFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftFilter.js","./tiltshift/TiltShiftXFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftXFilter.js","./tiltshift/TiltShiftYFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftYFilter.js","./twist/TwistFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/twist/TwistFilter.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/invert/InvertFilter.js":[function(require,module,exports){
+},{"./ascii/AsciiFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/ascii/AsciiFilter.js","./bloom/BloomFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/bloom/BloomFilter.js","./blur/BlurDirFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurDirFilter.js","./blur/BlurFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurFilter.js","./blur/BlurXFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurXFilter.js","./blur/BlurYFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/BlurYFilter.js","./blur/SmartBlurFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/blur/SmartBlurFilter.js","./color/ColorMatrixFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/color/ColorMatrixFilter.js","./color/ColorStepFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/color/ColorStepFilter.js","./convolution/ConvolutionFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/convolution/ConvolutionFilter.js","./crosshatch/CrossHatchFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/crosshatch/CrossHatchFilter.js","./displacement/DisplacementFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/displacement/DisplacementFilter.js","./dot/DotScreenFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/dot/DotScreenFilter.js","./dropshadow/DropShadowFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/dropshadow/DropShadowFilter.js","./gray/GrayFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/gray/GrayFilter.js","./invert/InvertFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/invert/InvertFilter.js","./noise/NoiseFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/noise/NoiseFilter.js","./pixelate/PixelateFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/pixelate/PixelateFilter.js","./rgb/RGBSplitFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/rgb/RGBSplitFilter.js","./sepia/SepiaFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/sepia/SepiaFilter.js","./shockwave/ShockwaveFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/shockwave/ShockwaveFilter.js","./tiltshift/TiltShiftFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftFilter.js","./tiltshift/TiltShiftXFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftXFilter.js","./tiltshift/TiltShiftYFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftYFilter.js","./twist/TwistFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/twist/TwistFilter.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/invert/InvertFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21711,7 +21750,7 @@ Object.defineProperties(InvertFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/noise/NoiseFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/noise/NoiseFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21766,7 +21805,7 @@ Object.defineProperties(NoiseFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/pixelate/PixelateFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/pixelate/PixelateFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21817,7 +21856,7 @@ Object.defineProperties(PixelateFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/rgb/RGBSplitFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/rgb/RGBSplitFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21903,7 +21942,7 @@ Object.defineProperties(RGBSplitFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/sepia/SepiaFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/sepia/SepiaFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -21953,7 +21992,7 @@ Object.defineProperties(SepiaFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/shockwave/ShockwaveFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/shockwave/ShockwaveFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -22041,7 +22080,7 @@ Object.defineProperties(ShockwaveFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftAxisFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftAxisFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -22166,7 +22205,7 @@ Object.defineProperties(TiltShiftAxisFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftFilter.js":[function(require,module,exports){
 var core = require('../../core'),
     TiltShiftXFilter = require('./TiltShiftXFilter'),
     TiltShiftYFilter = require('./TiltShiftYFilter');
@@ -22276,7 +22315,7 @@ Object.defineProperties(TiltShiftFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","./TiltShiftXFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftXFilter.js","./TiltShiftYFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftYFilter.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftXFilter.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","./TiltShiftXFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftXFilter.js","./TiltShiftYFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftYFilter.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftXFilter.js":[function(require,module,exports){
 var TiltShiftAxisFilter = require('./TiltShiftAxisFilter');
 
 /**
@@ -22314,7 +22353,7 @@ TiltShiftXFilter.prototype.updateDelta = function ()
     this.uniforms.delta.value.y = dy / d;
 };
 
-},{"./TiltShiftAxisFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftAxisFilter.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftYFilter.js":[function(require,module,exports){
+},{"./TiltShiftAxisFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftAxisFilter.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftYFilter.js":[function(require,module,exports){
 var TiltShiftAxisFilter = require('./TiltShiftAxisFilter');
 
 /**
@@ -22352,7 +22391,7 @@ TiltShiftYFilter.prototype.updateDelta = function ()
     this.uniforms.delta.value.y = dx / d;
 };
 
-},{"./TiltShiftAxisFilter":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/tiltshift/TiltShiftAxisFilter.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/twist/TwistFilter.js":[function(require,module,exports){
+},{"./TiltShiftAxisFilter":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/tiltshift/TiltShiftAxisFilter.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/twist/TwistFilter.js":[function(require,module,exports){
 var core = require('../../core');
 // @see https://github.com/substack/brfs/issues/25
 
@@ -22437,7 +22476,7 @@ Object.defineProperties(TwistFilter.prototype, {
     }
 });
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/index.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js":[function(require,module,exports){
 (function (global){
 // run the polyfills
 require('./polyfill');
@@ -22470,7 +22509,7 @@ global.PIXI = core;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 
-},{"./accessibility":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/accessibility/index.js","./core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","./deprecation":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/deprecation.js","./extras":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/index.js","./filters":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/filters/index.js","./interaction":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/interaction/index.js","./loaders":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/index.js","./mesh":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/index.js","./polyfill":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/polyfill/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/interaction/InteractionData.js":[function(require,module,exports){
+},{"./accessibility":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/accessibility/index.js","./core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","./deprecation":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/deprecation.js","./extras":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/index.js","./filters":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/filters/index.js","./interaction":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/interaction/index.js","./loaders":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/index.js","./mesh":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/index.js","./polyfill":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/polyfill/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/interaction/InteractionData.js":[function(require,module,exports){
 var core = require('../core');
 
 /**
@@ -22519,7 +22558,7 @@ InteractionData.prototype.getLocalPosition = function (displayObject, point, glo
     return displayObject.worldTransform.applyInverse(globalPos || this.global, point);
 };
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/interaction/InteractionManager.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/interaction/InteractionManager.js":[function(require,module,exports){
 var core = require('../core'),
     InteractionData = require('./InteractionData');
 
@@ -23425,7 +23464,7 @@ InteractionManager.prototype.destroy = function () {
 core.WebGLRenderer.registerPlugin('interaction', InteractionManager);
 core.CanvasRenderer.registerPlugin('interaction', InteractionManager);
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","./InteractionData":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/interaction/InteractionData.js","./interactiveTarget":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/interaction/interactiveTarget.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/interaction/index.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","./InteractionData":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/interaction/InteractionData.js","./interactiveTarget":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/interaction/interactiveTarget.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/interaction/index.js":[function(require,module,exports){
 /**
  * @file        Main export of the PIXI interactions library
  * @author      Mat Groves <mat@goodboydigital.com>
@@ -23442,7 +23481,7 @@ module.exports = {
     interactiveTarget:  require('./interactiveTarget')
 };
 
-},{"./InteractionData":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/interaction/InteractionData.js","./InteractionManager":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/interaction/InteractionManager.js","./interactiveTarget":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/interaction/interactiveTarget.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/interaction/interactiveTarget.js":[function(require,module,exports){
+},{"./InteractionData":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/interaction/InteractionData.js","./InteractionManager":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/interaction/InteractionManager.js","./interactiveTarget":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/interaction/interactiveTarget.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/interaction/interactiveTarget.js":[function(require,module,exports){
 /**
  * Default property values of interactive objects
  * used by {@link PIXI.interaction.InteractionManager}.
@@ -23491,7 +23530,7 @@ var interactiveTarget = {
 
 module.exports = interactiveTarget;
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/bitmapFontParser.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/bitmapFontParser.js":[function(require,module,exports){
 var Resource = require('resource-loader').Resource,
     core = require('../core'),
     extras = require('../extras'),
@@ -23615,7 +23654,7 @@ module.exports = function ()
     };
 };
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","../extras":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/extras/index.js","path":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/path-browserify/index.js","resource-loader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/index.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","../extras":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/extras/index.js","path":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/path-browserify/index.js","resource-loader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/index.js":[function(require,module,exports){
 /**
  * @file        Main export of the PIXI loaders library
  * @author      Mat Groves <mat@goodboydigital.com>
@@ -23636,7 +23675,7 @@ module.exports = {
     Resource:           require('resource-loader').Resource
 };
 
-},{"./bitmapFontParser":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/bitmapFontParser.js","./loader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/loader.js","./spritesheetParser":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/spritesheetParser.js","./textureParser":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/textureParser.js","resource-loader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/loader.js":[function(require,module,exports){
+},{"./bitmapFontParser":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/bitmapFontParser.js","./loader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/loader.js","./spritesheetParser":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/spritesheetParser.js","./textureParser":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/textureParser.js","resource-loader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/loader.js":[function(require,module,exports){
 var ResourceLoader = require('resource-loader'),
     textureParser = require('./textureParser'),
     spritesheetParser = require('./spritesheetParser'),
@@ -23698,7 +23737,7 @@ var Resource = ResourceLoader.Resource;
 
 Resource.setExtensionXhrType('fnt', Resource.XHR_RESPONSE_TYPE.DOCUMENT);
 
-},{"./bitmapFontParser":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/bitmapFontParser.js","./spritesheetParser":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/spritesheetParser.js","./textureParser":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/textureParser.js","resource-loader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/spritesheetParser.js":[function(require,module,exports){
+},{"./bitmapFontParser":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/bitmapFontParser.js","./spritesheetParser":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/spritesheetParser.js","./textureParser":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/textureParser.js","resource-loader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/spritesheetParser.js":[function(require,module,exports){
 var Resource = require('resource-loader').Resource,
     path = require('path'),
     core = require('../core'),
@@ -23817,7 +23856,7 @@ module.exports = function ()
     };
 };
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","async":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/node_modules/async/lib/async.js","path":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/path-browserify/index.js","resource-loader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/loaders/textureParser.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","async":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/async/lib/async.js","path":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/path-browserify/index.js","resource-loader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/loaders/textureParser.js":[function(require,module,exports){
 var core = require('../core');
 
 module.exports = function ()
@@ -23839,7 +23878,7 @@ module.exports = function ()
     };
 };
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/Mesh.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/Mesh.js":[function(require,module,exports){
 var core = require('../core'),
     tempPoint = new core.Point(),
     tempPolygon = new core.Polygon();
@@ -24317,7 +24356,7 @@ Mesh.DRAW_MODES = {
     TRIANGLES: 1
 };
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/Plane.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/Plane.js":[function(require,module,exports){
 var Mesh = require('./Mesh');
 
 /**
@@ -24443,7 +24482,7 @@ Plane.prototype._onTextureUpdate = function ()
     }
 };
 
-},{"./Mesh":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/Mesh.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/Rope.js":[function(require,module,exports){
+},{"./Mesh":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/Mesh.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/Rope.js":[function(require,module,exports){
 var Mesh = require('./Mesh');
 var core = require('../core');
 
@@ -24656,7 +24695,7 @@ Rope.prototype.updateTransform = function ()
     this.containerUpdateTransform();
 };
 
-},{"../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","./Mesh":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/Mesh.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/index.js":[function(require,module,exports){
+},{"../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","./Mesh":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/Mesh.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/index.js":[function(require,module,exports){
 /**
  * @file        Main export of the PIXI extras library
  * @author      Mat Groves <mat@goodboydigital.com>
@@ -24675,7 +24714,7 @@ module.exports = {
     MeshShader:     require('./webgl/MeshShader')
 };
 
-},{"./Mesh":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/Mesh.js","./Plane":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/Plane.js","./Rope":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/Rope.js","./webgl/MeshRenderer":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/webgl/MeshRenderer.js","./webgl/MeshShader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/webgl/MeshShader.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/webgl/MeshRenderer.js":[function(require,module,exports){
+},{"./Mesh":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/Mesh.js","./Plane":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/Plane.js","./Rope":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/Rope.js","./webgl/MeshRenderer":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/webgl/MeshRenderer.js","./webgl/MeshShader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/webgl/MeshShader.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/webgl/MeshRenderer.js":[function(require,module,exports){
 var core = require('../../core'),
     Mesh = require('../Mesh');
 
@@ -24904,7 +24943,7 @@ MeshRenderer.prototype.destroy = function ()
     core.ObjectRenderer.prototype.destroy.call(this);
 };
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js","../Mesh":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/Mesh.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/mesh/webgl/MeshShader.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js","../Mesh":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/Mesh.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/mesh/webgl/MeshShader.js":[function(require,module,exports){
 var core = require('../../core');
 
 /**
@@ -24965,7 +25004,7 @@ module.exports = MeshShader;
 
 core.ShaderManager.registerPlugin('meshShader', MeshShader);
 
-},{"../../core":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/core/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/polyfill/Math.sign.js":[function(require,module,exports){
+},{"../../core":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/core/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/polyfill/Math.sign.js":[function(require,module,exports){
 // References:
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/sign
 
@@ -24981,7 +25020,7 @@ if (!Math.sign)
     };
 }
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/polyfill/Object.assign.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/polyfill/Object.assign.js":[function(require,module,exports){
 // References:
 // https://github.com/sindresorhus/object-assign
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/assign
@@ -24991,12 +25030,12 @@ if (!Object.assign)
     Object.assign = require('object-assign');
 }
 
-},{"object-assign":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/object-assign/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/polyfill/index.js":[function(require,module,exports){
+},{"object-assign":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/object-assign/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/polyfill/index.js":[function(require,module,exports){
 require('./Object.assign');
 require('./requestAnimationFrame');
 require('./Math.sign');
 
-},{"./Math.sign":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/polyfill/Math.sign.js","./Object.assign":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/polyfill/Object.assign.js","./requestAnimationFrame":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/polyfill/requestAnimationFrame.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/polyfill/requestAnimationFrame.js":[function(require,module,exports){
+},{"./Math.sign":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/polyfill/Math.sign.js","./Object.assign":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/polyfill/Object.assign.js","./requestAnimationFrame":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/polyfill/requestAnimationFrame.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/polyfill/requestAnimationFrame.js":[function(require,module,exports){
 (function (global){
 // References:
 // http://paulirish.com/2011/requestanimationframe-for-smart-animating/
@@ -25067,10 +25106,96 @@ if (!global.cancelAnimationFrame) {
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/process/browser.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/process/browser.js":[function(require,module,exports){
 // shim for using process in browser
-
 var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
 var queue = [];
 var draining = false;
 var currentQueue;
@@ -25095,7 +25220,7 @@ function drainQueue() {
     if (draining) {
         return;
     }
-    var timeout = setTimeout(cleanUpNextTick);
+    var timeout = runTimeout(cleanUpNextTick);
     draining = true;
 
     var len = queue.length;
@@ -25112,7 +25237,7 @@ function drainQueue() {
     }
     currentQueue = null;
     draining = false;
-    clearTimeout(timeout);
+    runClearTimeout(timeout);
 }
 
 process.nextTick = function (fun) {
@@ -25124,7 +25249,7 @@ process.nextTick = function (fun) {
     }
     queue.push(new Item(fun, args));
     if (queue.length === 1 && !draining) {
-        setTimeout(drainQueue, 0);
+        runTimeout(drainQueue);
     }
 };
 
@@ -25152,6 +25277,10 @@ process.off = noop;
 process.removeListener = noop;
 process.removeAllListeners = noop;
 process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
 
 process.binding = function (name) {
     throw new Error('process.binding is not supported');
@@ -25163,1868 +25292,342 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/punycode/punycode.js":[function(require,module,exports){
-(function (global){
-/*! https://mths.be/punycode v1.4.1 by @mathias */
-;(function(root) {
-
-	/** Detect free variables */
-	var freeExports = typeof exports == 'object' && exports &&
-		!exports.nodeType && exports;
-	var freeModule = typeof module == 'object' && module &&
-		!module.nodeType && module;
-	var freeGlobal = typeof global == 'object' && global;
-	if (
-		freeGlobal.global === freeGlobal ||
-		freeGlobal.window === freeGlobal ||
-		freeGlobal.self === freeGlobal
-	) {
-		root = freeGlobal;
-	}
-
-	/**
-	 * The `punycode` object.
-	 * @name punycode
-	 * @type Object
-	 */
-	var punycode,
-
-	/** Highest positive signed 32-bit float value */
-	maxInt = 2147483647, // aka. 0x7FFFFFFF or 2^31-1
-
-	/** Bootstring parameters */
-	base = 36,
-	tMin = 1,
-	tMax = 26,
-	skew = 38,
-	damp = 700,
-	initialBias = 72,
-	initialN = 128, // 0x80
-	delimiter = '-', // '\x2D'
-
-	/** Regular expressions */
-	regexPunycode = /^xn--/,
-	regexNonASCII = /[^\x20-\x7E]/, // unprintable ASCII chars + non-ASCII chars
-	regexSeparators = /[\x2E\u3002\uFF0E\uFF61]/g, // RFC 3490 separators
-
-	/** Error messages */
-	errors = {
-		'overflow': 'Overflow: input needs wider integers to process',
-		'not-basic': 'Illegal input >= 0x80 (not a basic code point)',
-		'invalid-input': 'Invalid input'
-	},
-
-	/** Convenience shortcuts */
-	baseMinusTMin = base - tMin,
-	floor = Math.floor,
-	stringFromCharCode = String.fromCharCode,
-
-	/** Temporary variable */
-	key;
-
-	/*--------------------------------------------------------------------------*/
-
-	/**
-	 * A generic error utility function.
-	 * @private
-	 * @param {String} type The error type.
-	 * @returns {Error} Throws a `RangeError` with the applicable error message.
-	 */
-	function error(type) {
-		throw new RangeError(errors[type]);
-	}
-
-	/**
-	 * A generic `Array#map` utility function.
-	 * @private
-	 * @param {Array} array The array to iterate over.
-	 * @param {Function} callback The function that gets called for every array
-	 * item.
-	 * @returns {Array} A new array of values returned by the callback function.
-	 */
-	function map(array, fn) {
-		var length = array.length;
-		var result = [];
-		while (length--) {
-			result[length] = fn(array[length]);
-		}
-		return result;
-	}
-
-	/**
-	 * A simple `Array#map`-like wrapper to work with domain name strings or email
-	 * addresses.
-	 * @private
-	 * @param {String} domain The domain name or email address.
-	 * @param {Function} callback The function that gets called for every
-	 * character.
-	 * @returns {Array} A new string of characters returned by the callback
-	 * function.
-	 */
-	function mapDomain(string, fn) {
-		var parts = string.split('@');
-		var result = '';
-		if (parts.length > 1) {
-			// In email addresses, only the domain name should be punycoded. Leave
-			// the local part (i.e. everything up to `@`) intact.
-			result = parts[0] + '@';
-			string = parts[1];
-		}
-		// Avoid `split(regex)` for IE8 compatibility. See #17.
-		string = string.replace(regexSeparators, '\x2E');
-		var labels = string.split('.');
-		var encoded = map(labels, fn).join('.');
-		return result + encoded;
-	}
-
-	/**
-	 * Creates an array containing the numeric code points of each Unicode
-	 * character in the string. While JavaScript uses UCS-2 internally,
-	 * this function will convert a pair of surrogate halves (each of which
-	 * UCS-2 exposes as separate characters) into a single code point,
-	 * matching UTF-16.
-	 * @see `punycode.ucs2.encode`
-	 * @see <https://mathiasbynens.be/notes/javascript-encoding>
-	 * @memberOf punycode.ucs2
-	 * @name decode
-	 * @param {String} string The Unicode input string (UCS-2).
-	 * @returns {Array} The new array of code points.
-	 */
-	function ucs2decode(string) {
-		var output = [],
-		    counter = 0,
-		    length = string.length,
-		    value,
-		    extra;
-		while (counter < length) {
-			value = string.charCodeAt(counter++);
-			if (value >= 0xD800 && value <= 0xDBFF && counter < length) {
-				// high surrogate, and there is a next character
-				extra = string.charCodeAt(counter++);
-				if ((extra & 0xFC00) == 0xDC00) { // low surrogate
-					output.push(((value & 0x3FF) << 10) + (extra & 0x3FF) + 0x10000);
-				} else {
-					// unmatched surrogate; only append this code unit, in case the next
-					// code unit is the high surrogate of a surrogate pair
-					output.push(value);
-					counter--;
-				}
-			} else {
-				output.push(value);
-			}
-		}
-		return output;
-	}
-
-	/**
-	 * Creates a string based on an array of numeric code points.
-	 * @see `punycode.ucs2.decode`
-	 * @memberOf punycode.ucs2
-	 * @name encode
-	 * @param {Array} codePoints The array of numeric code points.
-	 * @returns {String} The new Unicode string (UCS-2).
-	 */
-	function ucs2encode(array) {
-		return map(array, function(value) {
-			var output = '';
-			if (value > 0xFFFF) {
-				value -= 0x10000;
-				output += stringFromCharCode(value >>> 10 & 0x3FF | 0xD800);
-				value = 0xDC00 | value & 0x3FF;
-			}
-			output += stringFromCharCode(value);
-			return output;
-		}).join('');
-	}
-
-	/**
-	 * Converts a basic code point into a digit/integer.
-	 * @see `digitToBasic()`
-	 * @private
-	 * @param {Number} codePoint The basic numeric code point value.
-	 * @returns {Number} The numeric value of a basic code point (for use in
-	 * representing integers) in the range `0` to `base - 1`, or `base` if
-	 * the code point does not represent a value.
-	 */
-	function basicToDigit(codePoint) {
-		if (codePoint - 48 < 10) {
-			return codePoint - 22;
-		}
-		if (codePoint - 65 < 26) {
-			return codePoint - 65;
-		}
-		if (codePoint - 97 < 26) {
-			return codePoint - 97;
-		}
-		return base;
-	}
-
-	/**
-	 * Converts a digit/integer into a basic code point.
-	 * @see `basicToDigit()`
-	 * @private
-	 * @param {Number} digit The numeric value of a basic code point.
-	 * @returns {Number} The basic code point whose value (when used for
-	 * representing integers) is `digit`, which needs to be in the range
-	 * `0` to `base - 1`. If `flag` is non-zero, the uppercase form is
-	 * used; else, the lowercase form is used. The behavior is undefined
-	 * if `flag` is non-zero and `digit` has no uppercase form.
-	 */
-	function digitToBasic(digit, flag) {
-		//  0..25 map to ASCII a..z or A..Z
-		// 26..35 map to ASCII 0..9
-		return digit + 22 + 75 * (digit < 26) - ((flag != 0) << 5);
-	}
-
-	/**
-	 * Bias adaptation function as per section 3.4 of RFC 3492.
-	 * https://tools.ietf.org/html/rfc3492#section-3.4
-	 * @private
-	 */
-	function adapt(delta, numPoints, firstTime) {
-		var k = 0;
-		delta = firstTime ? floor(delta / damp) : delta >> 1;
-		delta += floor(delta / numPoints);
-		for (/* no initialization */; delta > baseMinusTMin * tMax >> 1; k += base) {
-			delta = floor(delta / baseMinusTMin);
-		}
-		return floor(k + (baseMinusTMin + 1) * delta / (delta + skew));
-	}
-
-	/**
-	 * Converts a Punycode string of ASCII-only symbols to a string of Unicode
-	 * symbols.
-	 * @memberOf punycode
-	 * @param {String} input The Punycode string of ASCII-only symbols.
-	 * @returns {String} The resulting string of Unicode symbols.
-	 */
-	function decode(input) {
-		// Don't use UCS-2
-		var output = [],
-		    inputLength = input.length,
-		    out,
-		    i = 0,
-		    n = initialN,
-		    bias = initialBias,
-		    basic,
-		    j,
-		    index,
-		    oldi,
-		    w,
-		    k,
-		    digit,
-		    t,
-		    /** Cached calculation results */
-		    baseMinusT;
-
-		// Handle the basic code points: let `basic` be the number of input code
-		// points before the last delimiter, or `0` if there is none, then copy
-		// the first basic code points to the output.
-
-		basic = input.lastIndexOf(delimiter);
-		if (basic < 0) {
-			basic = 0;
-		}
-
-		for (j = 0; j < basic; ++j) {
-			// if it's not a basic code point
-			if (input.charCodeAt(j) >= 0x80) {
-				error('not-basic');
-			}
-			output.push(input.charCodeAt(j));
-		}
-
-		// Main decoding loop: start just after the last delimiter if any basic code
-		// points were copied; start at the beginning otherwise.
-
-		for (index = basic > 0 ? basic + 1 : 0; index < inputLength; /* no final expression */) {
-
-			// `index` is the index of the next character to be consumed.
-			// Decode a generalized variable-length integer into `delta`,
-			// which gets added to `i`. The overflow checking is easier
-			// if we increase `i` as we go, then subtract off its starting
-			// value at the end to obtain `delta`.
-			for (oldi = i, w = 1, k = base; /* no condition */; k += base) {
-
-				if (index >= inputLength) {
-					error('invalid-input');
-				}
-
-				digit = basicToDigit(input.charCodeAt(index++));
-
-				if (digit >= base || digit > floor((maxInt - i) / w)) {
-					error('overflow');
-				}
-
-				i += digit * w;
-				t = k <= bias ? tMin : (k >= bias + tMax ? tMax : k - bias);
-
-				if (digit < t) {
-					break;
-				}
-
-				baseMinusT = base - t;
-				if (w > floor(maxInt / baseMinusT)) {
-					error('overflow');
-				}
-
-				w *= baseMinusT;
-
-			}
-
-			out = output.length + 1;
-			bias = adapt(i - oldi, out, oldi == 0);
-
-			// `i` was supposed to wrap around from `out` to `0`,
-			// incrementing `n` each time, so we'll fix that now:
-			if (floor(i / out) > maxInt - n) {
-				error('overflow');
-			}
-
-			n += floor(i / out);
-			i %= out;
-
-			// Insert `n` at position `i` of the output
-			output.splice(i++, 0, n);
-
-		}
-
-		return ucs2encode(output);
-	}
-
-	/**
-	 * Converts a string of Unicode symbols (e.g. a domain name label) to a
-	 * Punycode string of ASCII-only symbols.
-	 * @memberOf punycode
-	 * @param {String} input The string of Unicode symbols.
-	 * @returns {String} The resulting Punycode string of ASCII-only symbols.
-	 */
-	function encode(input) {
-		var n,
-		    delta,
-		    handledCPCount,
-		    basicLength,
-		    bias,
-		    j,
-		    m,
-		    q,
-		    k,
-		    t,
-		    currentValue,
-		    output = [],
-		    /** `inputLength` will hold the number of code points in `input`. */
-		    inputLength,
-		    /** Cached calculation results */
-		    handledCPCountPlusOne,
-		    baseMinusT,
-		    qMinusT;
-
-		// Convert the input in UCS-2 to Unicode
-		input = ucs2decode(input);
-
-		// Cache the length
-		inputLength = input.length;
-
-		// Initialize the state
-		n = initialN;
-		delta = 0;
-		bias = initialBias;
-
-		// Handle the basic code points
-		for (j = 0; j < inputLength; ++j) {
-			currentValue = input[j];
-			if (currentValue < 0x80) {
-				output.push(stringFromCharCode(currentValue));
-			}
-		}
-
-		handledCPCount = basicLength = output.length;
-
-		// `handledCPCount` is the number of code points that have been handled;
-		// `basicLength` is the number of basic code points.
-
-		// Finish the basic string - if it is not empty - with a delimiter
-		if (basicLength) {
-			output.push(delimiter);
-		}
-
-		// Main encoding loop:
-		while (handledCPCount < inputLength) {
-
-			// All non-basic code points < n have been handled already. Find the next
-			// larger one:
-			for (m = maxInt, j = 0; j < inputLength; ++j) {
-				currentValue = input[j];
-				if (currentValue >= n && currentValue < m) {
-					m = currentValue;
-				}
-			}
-
-			// Increase `delta` enough to advance the decoder's <n,i> state to <m,0>,
-			// but guard against overflow
-			handledCPCountPlusOne = handledCPCount + 1;
-			if (m - n > floor((maxInt - delta) / handledCPCountPlusOne)) {
-				error('overflow');
-			}
-
-			delta += (m - n) * handledCPCountPlusOne;
-			n = m;
-
-			for (j = 0; j < inputLength; ++j) {
-				currentValue = input[j];
-
-				if (currentValue < n && ++delta > maxInt) {
-					error('overflow');
-				}
-
-				if (currentValue == n) {
-					// Represent delta as a generalized variable-length integer
-					for (q = delta, k = base; /* no condition */; k += base) {
-						t = k <= bias ? tMin : (k >= bias + tMax ? tMax : k - bias);
-						if (q < t) {
-							break;
-						}
-						qMinusT = q - t;
-						baseMinusT = base - t;
-						output.push(
-							stringFromCharCode(digitToBasic(t + qMinusT % baseMinusT, 0))
-						);
-						q = floor(qMinusT / baseMinusT);
-					}
-
-					output.push(stringFromCharCode(digitToBasic(q, 0)));
-					bias = adapt(delta, handledCPCountPlusOne, handledCPCount == basicLength);
-					delta = 0;
-					++handledCPCount;
-				}
-			}
-
-			++delta;
-			++n;
-
-		}
-		return output.join('');
-	}
-
-	/**
-	 * Converts a Punycode string representing a domain name or an email address
-	 * to Unicode. Only the Punycoded parts of the input will be converted, i.e.
-	 * it doesn't matter if you call it on a string that has already been
-	 * converted to Unicode.
-	 * @memberOf punycode
-	 * @param {String} input The Punycoded domain name or email address to
-	 * convert to Unicode.
-	 * @returns {String} The Unicode representation of the given Punycode
-	 * string.
-	 */
-	function toUnicode(input) {
-		return mapDomain(input, function(string) {
-			return regexPunycode.test(string)
-				? decode(string.slice(4).toLowerCase())
-				: string;
-		});
-	}
-
-	/**
-	 * Converts a Unicode string representing a domain name or an email address to
-	 * Punycode. Only the non-ASCII parts of the domain name will be converted,
-	 * i.e. it doesn't matter if you call it with a domain that's already in
-	 * ASCII.
-	 * @memberOf punycode
-	 * @param {String} input The domain name or email address to convert, as a
-	 * Unicode string.
-	 * @returns {String} The Punycode representation of the given domain name or
-	 * email address.
-	 */
-	function toASCII(input) {
-		return mapDomain(input, function(string) {
-			return regexNonASCII.test(string)
-				? 'xn--' + encode(string)
-				: string;
-		});
-	}
-
-	/*--------------------------------------------------------------------------*/
-
-	/** Define the public API */
-	punycode = {
-		/**
-		 * A string representing the current Punycode.js version number.
-		 * @memberOf punycode
-		 * @type String
-		 */
-		'version': '1.4.1',
-		/**
-		 * An object of methods to convert from JavaScript's internal character
-		 * representation (UCS-2) to Unicode code points, and back.
-		 * @see <https://mathiasbynens.be/notes/javascript-encoding>
-		 * @memberOf punycode
-		 * @type Object
-		 */
-		'ucs2': {
-			'decode': ucs2decode,
-			'encode': ucs2encode
-		},
-		'decode': decode,
-		'encode': encode,
-		'toASCII': toASCII,
-		'toUnicode': toUnicode
-	};
-
-	/** Expose `punycode` */
-	// Some AMD build optimizers, like r.js, check for specific condition patterns
-	// like the following:
-	if (
-		typeof define == 'function' &&
-		typeof define.amd == 'object' &&
-		define.amd
-	) {
-		define('punycode', function() {
-			return punycode;
-		});
-	} else if (freeExports && freeModule) {
-		if (module.exports == freeExports) {
-			// in Node.js, io.js, or RingoJS v0.8.0+
-			freeModule.exports = punycode;
-		} else {
-			// in Narwhal or RingoJS v0.7.0-
-			for (key in punycode) {
-				punycode.hasOwnProperty(key) && (freeExports[key] = punycode[key]);
-			}
-		}
-	} else {
-		// in Rhino or a web browser
-		root.punycode = punycode;
-	}
-
-}(this));
-
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/querystring-es3/decode.js":[function(require,module,exports){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/node_modules/eventemitter3/index.js":[function(require,module,exports){
 'use strict';
 
-// If obj.hasOwnProperty has been overridden, then calling
-// obj.hasOwnProperty(prop) will break.
-// See: https://github.com/joyent/node/issues/1707
-function hasOwnProperty(obj, prop) {
-  return Object.prototype.hasOwnProperty.call(obj, prop);
-}
+var has = Object.prototype.hasOwnProperty
+  , prefix = '~';
 
-module.exports = function(qs, sep, eq, options) {
-  sep = sep || '&';
-  eq = eq || '=';
-  var obj = {};
-
-  if (typeof qs !== 'string' || qs.length === 0) {
-    return obj;
-  }
-
-  var regexp = /\+/g;
-  qs = qs.split(sep);
-
-  var maxKeys = 1000;
-  if (options && typeof options.maxKeys === 'number') {
-    maxKeys = options.maxKeys;
-  }
-
-  var len = qs.length;
-  // maxKeys <= 0 means that we should not limit keys count
-  if (maxKeys > 0 && len > maxKeys) {
-    len = maxKeys;
-  }
-
-  for (var i = 0; i < len; ++i) {
-    var x = qs[i].replace(regexp, '%20'),
-        idx = x.indexOf(eq),
-        kstr, vstr, k, v;
-
-    if (idx >= 0) {
-      kstr = x.substr(0, idx);
-      vstr = x.substr(idx + 1);
-    } else {
-      kstr = x;
-      vstr = '';
-    }
-
-    k = decodeURIComponent(kstr);
-    v = decodeURIComponent(vstr);
-
-    if (!hasOwnProperty(obj, k)) {
-      obj[k] = v;
-    } else if (isArray(obj[k])) {
-      obj[k].push(v);
-    } else {
-      obj[k] = [obj[k], v];
-    }
-  }
-
-  return obj;
-};
-
-var isArray = Array.isArray || function (xs) {
-  return Object.prototype.toString.call(xs) === '[object Array]';
-};
-
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/querystring-es3/encode.js":[function(require,module,exports){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-'use strict';
-
-var stringifyPrimitive = function(v) {
-  switch (typeof v) {
-    case 'string':
-      return v;
-
-    case 'boolean':
-      return v ? 'true' : 'false';
-
-    case 'number':
-      return isFinite(v) ? v : '';
-
-    default:
-      return '';
-  }
-};
-
-module.exports = function(obj, sep, eq, name) {
-  sep = sep || '&';
-  eq = eq || '=';
-  if (obj === null) {
-    obj = undefined;
-  }
-
-  if (typeof obj === 'object') {
-    return map(objectKeys(obj), function(k) {
-      var ks = encodeURIComponent(stringifyPrimitive(k)) + eq;
-      if (isArray(obj[k])) {
-        return map(obj[k], function(v) {
-          return ks + encodeURIComponent(stringifyPrimitive(v));
-        }).join(sep);
-      } else {
-        return ks + encodeURIComponent(stringifyPrimitive(obj[k]));
-      }
-    }).join(sep);
-
-  }
-
-  if (!name) return '';
-  return encodeURIComponent(stringifyPrimitive(name)) + eq +
-         encodeURIComponent(stringifyPrimitive(obj));
-};
-
-var isArray = Array.isArray || function (xs) {
-  return Object.prototype.toString.call(xs) === '[object Array]';
-};
-
-function map (xs, f) {
-  if (xs.map) return xs.map(f);
-  var res = [];
-  for (var i = 0; i < xs.length; i++) {
-    res.push(f(xs[i], i));
-  }
-  return res;
-}
-
-var objectKeys = Object.keys || function (obj) {
-  var res = [];
-  for (var key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key)) res.push(key);
-  }
-  return res;
-};
-
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/querystring-es3/index.js":[function(require,module,exports){
-'use strict';
-
-exports.decode = exports.parse = require('./decode');
-exports.encode = exports.stringify = require('./encode');
-
-},{"./decode":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/querystring-es3/decode.js","./encode":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/querystring-es3/encode.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/node_modules/async/lib/async.js":[function(require,module,exports){
-(function (process){
-/*!
- * async
- * https://github.com/caolan/async
+/**
+ * Constructor to create a storage for our `EE` objects.
+ * An `Events` instance is a plain object whose properties are event names.
  *
- * Copyright 2010-2014 Caolan McMahon
- * Released under the MIT license
+ * @constructor
+ * @api private
  */
-/*jshint onevar: false, indent:4 */
-/*global setImmediate: false, setTimeout: false, console: false */
-(function () {
+function Events() {}
 
-    var async = {};
+//
+// We try to not inherit from `Object.prototype`. In some engines creating an
+// instance in this way is faster than calling `Object.create(null)` directly.
+// If `Object.create(null)` is not supported we prefix the event names with a
+// character to make sure that the built-in object properties are not
+// overridden or used as an attack vector.
+//
+if (Object.create) {
+  Events.prototype = Object.create(null);
 
-    // global on the server, window in the browser
-    var root, previous_async;
+  //
+  // This hack is needed because the `__proto__` property is still inherited in
+  // some old browsers like Android 4, iPhone 5.1, Opera 11 and Safari 5.
+  //
+  if (!new Events().__proto__) prefix = false;
+}
 
-    root = this;
-    if (root != null) {
-      previous_async = root.async;
+/**
+ * Representation of a single event listener.
+ *
+ * @param {Function} fn The listener function.
+ * @param {Mixed} context The context to invoke the listener with.
+ * @param {Boolean} [once=false] Specify if the listener is a one-time listener.
+ * @constructor
+ * @api private
+ */
+function EE(fn, context, once) {
+  this.fn = fn;
+  this.context = context;
+  this.once = once || false;
+}
+
+/**
+ * Minimal `EventEmitter` interface that is molded against the Node.js
+ * `EventEmitter` interface.
+ *
+ * @constructor
+ * @api public
+ */
+function EventEmitter() {
+  this._events = new Events();
+  this._eventsCount = 0;
+}
+
+/**
+ * Return an array listing the events for which the emitter has registered
+ * listeners.
+ *
+ * @returns {Array}
+ * @api public
+ */
+EventEmitter.prototype.eventNames = function eventNames() {
+  var names = []
+    , events
+    , name;
+
+  if (this._eventsCount === 0) return names;
+
+  for (name in (events = this._events)) {
+    if (has.call(events, name)) names.push(prefix ? name.slice(1) : name);
+  }
+
+  if (Object.getOwnPropertySymbols) {
+    return names.concat(Object.getOwnPropertySymbols(events));
+  }
+
+  return names;
+};
+
+/**
+ * Return the listeners registered for a given event.
+ *
+ * @param {String|Symbol} event The event name.
+ * @param {Boolean} exists Only check if there are listeners.
+ * @returns {Array|Boolean}
+ * @api public
+ */
+EventEmitter.prototype.listeners = function listeners(event, exists) {
+  var evt = prefix ? prefix + event : event
+    , available = this._events[evt];
+
+  if (exists) return !!available;
+  if (!available) return [];
+  if (available.fn) return [available.fn];
+
+  for (var i = 0, l = available.length, ee = new Array(l); i < l; i++) {
+    ee[i] = available[i].fn;
+  }
+
+  return ee;
+};
+
+/**
+ * Calls each of the listeners registered for a given event.
+ *
+ * @param {String|Symbol} event The event name.
+ * @returns {Boolean} `true` if the event had listeners, else `false`.
+ * @api public
+ */
+EventEmitter.prototype.emit = function emit(event, a1, a2, a3, a4, a5) {
+  var evt = prefix ? prefix + event : event;
+
+  if (!this._events[evt]) return false;
+
+  var listeners = this._events[evt]
+    , len = arguments.length
+    , args
+    , i;
+
+  if (listeners.fn) {
+    if (listeners.once) this.removeListener(event, listeners.fn, undefined, true);
+
+    switch (len) {
+      case 1: return listeners.fn.call(listeners.context), true;
+      case 2: return listeners.fn.call(listeners.context, a1), true;
+      case 3: return listeners.fn.call(listeners.context, a1, a2), true;
+      case 4: return listeners.fn.call(listeners.context, a1, a2, a3), true;
+      case 5: return listeners.fn.call(listeners.context, a1, a2, a3, a4), true;
+      case 6: return listeners.fn.call(listeners.context, a1, a2, a3, a4, a5), true;
     }
 
-    async.noConflict = function () {
-        root.async = previous_async;
-        return async;
-    };
-
-    function only_once(fn) {
-        var called = false;
-        return function() {
-            if (called) throw new Error("Callback was already called.");
-            called = true;
-            fn.apply(root, arguments);
-        }
+    for (i = 1, args = new Array(len -1); i < len; i++) {
+      args[i - 1] = arguments[i];
     }
 
-    //// cross-browser compatiblity functions ////
+    listeners.fn.apply(listeners.context, args);
+  } else {
+    var length = listeners.length
+      , j;
 
-    var _toString = Object.prototype.toString;
+    for (i = 0; i < length; i++) {
+      if (listeners[i].once) this.removeListener(event, listeners[i].fn, undefined, true);
 
-    var _isArray = Array.isArray || function (obj) {
-        return _toString.call(obj) === '[object Array]';
-    };
+      switch (len) {
+        case 1: listeners[i].fn.call(listeners[i].context); break;
+        case 2: listeners[i].fn.call(listeners[i].context, a1); break;
+        case 3: listeners[i].fn.call(listeners[i].context, a1, a2); break;
+        case 4: listeners[i].fn.call(listeners[i].context, a1, a2, a3); break;
+        default:
+          if (!args) for (j = 1, args = new Array(len -1); j < len; j++) {
+            args[j - 1] = arguments[j];
+          }
 
-    var _each = function (arr, iterator) {
-        for (var i = 0; i < arr.length; i += 1) {
-            iterator(arr[i], i, arr);
-        }
-    };
-
-    var _map = function (arr, iterator) {
-        if (arr.map) {
-            return arr.map(iterator);
-        }
-        var results = [];
-        _each(arr, function (x, i, a) {
-            results.push(iterator(x, i, a));
-        });
-        return results;
-    };
-
-    var _reduce = function (arr, iterator, memo) {
-        if (arr.reduce) {
-            return arr.reduce(iterator, memo);
-        }
-        _each(arr, function (x, i, a) {
-            memo = iterator(memo, x, i, a);
-        });
-        return memo;
-    };
-
-    var _keys = function (obj) {
-        if (Object.keys) {
-            return Object.keys(obj);
-        }
-        var keys = [];
-        for (var k in obj) {
-            if (obj.hasOwnProperty(k)) {
-                keys.push(k);
-            }
-        }
-        return keys;
-    };
-
-    //// exported async module functions ////
-
-    //// nextTick implementation with browser-compatible fallback ////
-    if (typeof process === 'undefined' || !(process.nextTick)) {
-        if (typeof setImmediate === 'function') {
-            async.nextTick = function (fn) {
-                // not a direct alias for IE10 compatibility
-                setImmediate(fn);
-            };
-            async.setImmediate = async.nextTick;
-        }
-        else {
-            async.nextTick = function (fn) {
-                setTimeout(fn, 0);
-            };
-            async.setImmediate = async.nextTick;
-        }
+          listeners[i].fn.apply(listeners[i].context, args);
+      }
     }
-    else {
-        async.nextTick = process.nextTick;
-        if (typeof setImmediate !== 'undefined') {
-            async.setImmediate = function (fn) {
-              // not a direct alias for IE10 compatibility
-              setImmediate(fn);
-            };
-        }
-        else {
-            async.setImmediate = async.nextTick;
-        }
+  }
+
+  return true;
+};
+
+/**
+ * Add a listener for a given event.
+ *
+ * @param {String|Symbol} event The event name.
+ * @param {Function} fn The listener function.
+ * @param {Mixed} [context=this] The context to invoke the listener with.
+ * @returns {EventEmitter} `this`.
+ * @api public
+ */
+EventEmitter.prototype.on = function on(event, fn, context) {
+  var listener = new EE(fn, context || this)
+    , evt = prefix ? prefix + event : event;
+
+  if (!this._events[evt]) this._events[evt] = listener, this._eventsCount++;
+  else if (!this._events[evt].fn) this._events[evt].push(listener);
+  else this._events[evt] = [this._events[evt], listener];
+
+  return this;
+};
+
+/**
+ * Add a one-time listener for a given event.
+ *
+ * @param {String|Symbol} event The event name.
+ * @param {Function} fn The listener function.
+ * @param {Mixed} [context=this] The context to invoke the listener with.
+ * @returns {EventEmitter} `this`.
+ * @api public
+ */
+EventEmitter.prototype.once = function once(event, fn, context) {
+  var listener = new EE(fn, context || this, true)
+    , evt = prefix ? prefix + event : event;
+
+  if (!this._events[evt]) this._events[evt] = listener, this._eventsCount++;
+  else if (!this._events[evt].fn) this._events[evt].push(listener);
+  else this._events[evt] = [this._events[evt], listener];
+
+  return this;
+};
+
+/**
+ * Remove the listeners of a given event.
+ *
+ * @param {String|Symbol} event The event name.
+ * @param {Function} fn Only remove the listeners that match this function.
+ * @param {Mixed} context Only remove the listeners that have this context.
+ * @param {Boolean} once Only remove one-time listeners.
+ * @returns {EventEmitter} `this`.
+ * @api public
+ */
+EventEmitter.prototype.removeListener = function removeListener(event, fn, context, once) {
+  var evt = prefix ? prefix + event : event;
+
+  if (!this._events[evt]) return this;
+  if (!fn) {
+    if (--this._eventsCount === 0) this._events = new Events();
+    else delete this._events[evt];
+    return this;
+  }
+
+  var listeners = this._events[evt];
+
+  if (listeners.fn) {
+    if (
+         listeners.fn === fn
+      && (!once || listeners.once)
+      && (!context || listeners.context === context)
+    ) {
+      if (--this._eventsCount === 0) this._events = new Events();
+      else delete this._events[evt];
     }
-
-    async.each = function (arr, iterator, callback) {
-        callback = callback || function () {};
-        if (!arr.length) {
-            return callback();
-        }
-        var completed = 0;
-        _each(arr, function (x) {
-            iterator(x, only_once(done) );
-        });
-        function done(err) {
-          if (err) {
-              callback(err);
-              callback = function () {};
-          }
-          else {
-              completed += 1;
-              if (completed >= arr.length) {
-                  callback();
-              }
-          }
-        }
-    };
-    async.forEach = async.each;
-
-    async.eachSeries = function (arr, iterator, callback) {
-        callback = callback || function () {};
-        if (!arr.length) {
-            return callback();
-        }
-        var completed = 0;
-        var iterate = function () {
-            iterator(arr[completed], function (err) {
-                if (err) {
-                    callback(err);
-                    callback = function () {};
-                }
-                else {
-                    completed += 1;
-                    if (completed >= arr.length) {
-                        callback();
-                    }
-                    else {
-                        iterate();
-                    }
-                }
-            });
-        };
-        iterate();
-    };
-    async.forEachSeries = async.eachSeries;
-
-    async.eachLimit = function (arr, limit, iterator, callback) {
-        var fn = _eachLimit(limit);
-        fn.apply(null, [arr, iterator, callback]);
-    };
-    async.forEachLimit = async.eachLimit;
-
-    var _eachLimit = function (limit) {
-
-        return function (arr, iterator, callback) {
-            callback = callback || function () {};
-            if (!arr.length || limit <= 0) {
-                return callback();
-            }
-            var completed = 0;
-            var started = 0;
-            var running = 0;
-
-            (function replenish () {
-                if (completed >= arr.length) {
-                    return callback();
-                }
-
-                while (running < limit && started < arr.length) {
-                    started += 1;
-                    running += 1;
-                    iterator(arr[started - 1], function (err) {
-                        if (err) {
-                            callback(err);
-                            callback = function () {};
-                        }
-                        else {
-                            completed += 1;
-                            running -= 1;
-                            if (completed >= arr.length) {
-                                callback();
-                            }
-                            else {
-                                replenish();
-                            }
-                        }
-                    });
-                }
-            })();
-        };
-    };
-
-
-    var doParallel = function (fn) {
-        return function () {
-            var args = Array.prototype.slice.call(arguments);
-            return fn.apply(null, [async.each].concat(args));
-        };
-    };
-    var doParallelLimit = function(limit, fn) {
-        return function () {
-            var args = Array.prototype.slice.call(arguments);
-            return fn.apply(null, [_eachLimit(limit)].concat(args));
-        };
-    };
-    var doSeries = function (fn) {
-        return function () {
-            var args = Array.prototype.slice.call(arguments);
-            return fn.apply(null, [async.eachSeries].concat(args));
-        };
-    };
-
-
-    var _asyncMap = function (eachfn, arr, iterator, callback) {
-        arr = _map(arr, function (x, i) {
-            return {index: i, value: x};
-        });
-        if (!callback) {
-            eachfn(arr, function (x, callback) {
-                iterator(x.value, function (err) {
-                    callback(err);
-                });
-            });
-        } else {
-            var results = [];
-            eachfn(arr, function (x, callback) {
-                iterator(x.value, function (err, v) {
-                    results[x.index] = v;
-                    callback(err);
-                });
-            }, function (err) {
-                callback(err, results);
-            });
-        }
-    };
-    async.map = doParallel(_asyncMap);
-    async.mapSeries = doSeries(_asyncMap);
-    async.mapLimit = function (arr, limit, iterator, callback) {
-        return _mapLimit(limit)(arr, iterator, callback);
-    };
-
-    var _mapLimit = function(limit) {
-        return doParallelLimit(limit, _asyncMap);
-    };
-
-    // reduce only has a series version, as doing reduce in parallel won't
-    // work in many situations.
-    async.reduce = function (arr, memo, iterator, callback) {
-        async.eachSeries(arr, function (x, callback) {
-            iterator(memo, x, function (err, v) {
-                memo = v;
-                callback(err);
-            });
-        }, function (err) {
-            callback(err, memo);
-        });
-    };
-    // inject alias
-    async.inject = async.reduce;
-    // foldl alias
-    async.foldl = async.reduce;
-
-    async.reduceRight = function (arr, memo, iterator, callback) {
-        var reversed = _map(arr, function (x) {
-            return x;
-        }).reverse();
-        async.reduce(reversed, memo, iterator, callback);
-    };
-    // foldr alias
-    async.foldr = async.reduceRight;
-
-    var _filter = function (eachfn, arr, iterator, callback) {
-        var results = [];
-        arr = _map(arr, function (x, i) {
-            return {index: i, value: x};
-        });
-        eachfn(arr, function (x, callback) {
-            iterator(x.value, function (v) {
-                if (v) {
-                    results.push(x);
-                }
-                callback();
-            });
-        }, function (err) {
-            callback(_map(results.sort(function (a, b) {
-                return a.index - b.index;
-            }), function (x) {
-                return x.value;
-            }));
-        });
-    };
-    async.filter = doParallel(_filter);
-    async.filterSeries = doSeries(_filter);
-    // select alias
-    async.select = async.filter;
-    async.selectSeries = async.filterSeries;
-
-    var _reject = function (eachfn, arr, iterator, callback) {
-        var results = [];
-        arr = _map(arr, function (x, i) {
-            return {index: i, value: x};
-        });
-        eachfn(arr, function (x, callback) {
-            iterator(x.value, function (v) {
-                if (!v) {
-                    results.push(x);
-                }
-                callback();
-            });
-        }, function (err) {
-            callback(_map(results.sort(function (a, b) {
-                return a.index - b.index;
-            }), function (x) {
-                return x.value;
-            }));
-        });
-    };
-    async.reject = doParallel(_reject);
-    async.rejectSeries = doSeries(_reject);
-
-    var _detect = function (eachfn, arr, iterator, main_callback) {
-        eachfn(arr, function (x, callback) {
-            iterator(x, function (result) {
-                if (result) {
-                    main_callback(x);
-                    main_callback = function () {};
-                }
-                else {
-                    callback();
-                }
-            });
-        }, function (err) {
-            main_callback();
-        });
-    };
-    async.detect = doParallel(_detect);
-    async.detectSeries = doSeries(_detect);
-
-    async.some = function (arr, iterator, main_callback) {
-        async.each(arr, function (x, callback) {
-            iterator(x, function (v) {
-                if (v) {
-                    main_callback(true);
-                    main_callback = function () {};
-                }
-                callback();
-            });
-        }, function (err) {
-            main_callback(false);
-        });
-    };
-    // any alias
-    async.any = async.some;
-
-    async.every = function (arr, iterator, main_callback) {
-        async.each(arr, function (x, callback) {
-            iterator(x, function (v) {
-                if (!v) {
-                    main_callback(false);
-                    main_callback = function () {};
-                }
-                callback();
-            });
-        }, function (err) {
-            main_callback(true);
-        });
-    };
-    // all alias
-    async.all = async.every;
-
-    async.sortBy = function (arr, iterator, callback) {
-        async.map(arr, function (x, callback) {
-            iterator(x, function (err, criteria) {
-                if (err) {
-                    callback(err);
-                }
-                else {
-                    callback(null, {value: x, criteria: criteria});
-                }
-            });
-        }, function (err, results) {
-            if (err) {
-                return callback(err);
-            }
-            else {
-                var fn = function (left, right) {
-                    var a = left.criteria, b = right.criteria;
-                    return a < b ? -1 : a > b ? 1 : 0;
-                };
-                callback(null, _map(results.sort(fn), function (x) {
-                    return x.value;
-                }));
-            }
-        });
-    };
-
-    async.auto = function (tasks, callback) {
-        callback = callback || function () {};
-        var keys = _keys(tasks);
-        var remainingTasks = keys.length
-        if (!remainingTasks) {
-            return callback();
-        }
-
-        var results = {};
-
-        var listeners = [];
-        var addListener = function (fn) {
-            listeners.unshift(fn);
-        };
-        var removeListener = function (fn) {
-            for (var i = 0; i < listeners.length; i += 1) {
-                if (listeners[i] === fn) {
-                    listeners.splice(i, 1);
-                    return;
-                }
-            }
-        };
-        var taskComplete = function () {
-            remainingTasks--
-            _each(listeners.slice(0), function (fn) {
-                fn();
-            });
-        };
-
-        addListener(function () {
-            if (!remainingTasks) {
-                var theCallback = callback;
-                // prevent final callback from calling itself if it errors
-                callback = function () {};
-
-                theCallback(null, results);
-            }
-        });
-
-        _each(keys, function (k) {
-            var task = _isArray(tasks[k]) ? tasks[k]: [tasks[k]];
-            var taskCallback = function (err) {
-                var args = Array.prototype.slice.call(arguments, 1);
-                if (args.length <= 1) {
-                    args = args[0];
-                }
-                if (err) {
-                    var safeResults = {};
-                    _each(_keys(results), function(rkey) {
-                        safeResults[rkey] = results[rkey];
-                    });
-                    safeResults[k] = args;
-                    callback(err, safeResults);
-                    // stop subsequent errors hitting callback multiple times
-                    callback = function () {};
-                }
-                else {
-                    results[k] = args;
-                    async.setImmediate(taskComplete);
-                }
-            };
-            var requires = task.slice(0, Math.abs(task.length - 1)) || [];
-            var ready = function () {
-                return _reduce(requires, function (a, x) {
-                    return (a && results.hasOwnProperty(x));
-                }, true) && !results.hasOwnProperty(k);
-            };
-            if (ready()) {
-                task[task.length - 1](taskCallback, results);
-            }
-            else {
-                var listener = function () {
-                    if (ready()) {
-                        removeListener(listener);
-                        task[task.length - 1](taskCallback, results);
-                    }
-                };
-                addListener(listener);
-            }
-        });
-    };
-
-    async.retry = function(times, task, callback) {
-        var DEFAULT_TIMES = 5;
-        var attempts = [];
-        // Use defaults if times not passed
-        if (typeof times === 'function') {
-            callback = task;
-            task = times;
-            times = DEFAULT_TIMES;
-        }
-        // Make sure times is a number
-        times = parseInt(times, 10) || DEFAULT_TIMES;
-        var wrappedTask = function(wrappedCallback, wrappedResults) {
-            var retryAttempt = function(task, finalAttempt) {
-                return function(seriesCallback) {
-                    task(function(err, result){
-                        seriesCallback(!err || finalAttempt, {err: err, result: result});
-                    }, wrappedResults);
-                };
-            };
-            while (times) {
-                attempts.push(retryAttempt(task, !(times-=1)));
-            }
-            async.series(attempts, function(done, data){
-                data = data[data.length - 1];
-                (wrappedCallback || callback)(data.err, data.result);
-            });
-        }
-        // If a callback is passed, run this as a controll flow
-        return callback ? wrappedTask() : wrappedTask
-    };
-
-    async.waterfall = function (tasks, callback) {
-        callback = callback || function () {};
-        if (!_isArray(tasks)) {
-          var err = new Error('First argument to waterfall must be an array of functions');
-          return callback(err);
-        }
-        if (!tasks.length) {
-            return callback();
-        }
-        var wrapIterator = function (iterator) {
-            return function (err) {
-                if (err) {
-                    callback.apply(null, arguments);
-                    callback = function () {};
-                }
-                else {
-                    var args = Array.prototype.slice.call(arguments, 1);
-                    var next = iterator.next();
-                    if (next) {
-                        args.push(wrapIterator(next));
-                    }
-                    else {
-                        args.push(callback);
-                    }
-                    async.setImmediate(function () {
-                        iterator.apply(null, args);
-                    });
-                }
-            };
-        };
-        wrapIterator(async.iterator(tasks))();
-    };
-
-    var _parallel = function(eachfn, tasks, callback) {
-        callback = callback || function () {};
-        if (_isArray(tasks)) {
-            eachfn.map(tasks, function (fn, callback) {
-                if (fn) {
-                    fn(function (err) {
-                        var args = Array.prototype.slice.call(arguments, 1);
-                        if (args.length <= 1) {
-                            args = args[0];
-                        }
-                        callback.call(null, err, args);
-                    });
-                }
-            }, callback);
-        }
-        else {
-            var results = {};
-            eachfn.each(_keys(tasks), function (k, callback) {
-                tasks[k](function (err) {
-                    var args = Array.prototype.slice.call(arguments, 1);
-                    if (args.length <= 1) {
-                        args = args[0];
-                    }
-                    results[k] = args;
-                    callback(err);
-                });
-            }, function (err) {
-                callback(err, results);
-            });
-        }
-    };
-
-    async.parallel = function (tasks, callback) {
-        _parallel({ map: async.map, each: async.each }, tasks, callback);
-    };
-
-    async.parallelLimit = function(tasks, limit, callback) {
-        _parallel({ map: _mapLimit(limit), each: _eachLimit(limit) }, tasks, callback);
-    };
-
-    async.series = function (tasks, callback) {
-        callback = callback || function () {};
-        if (_isArray(tasks)) {
-            async.mapSeries(tasks, function (fn, callback) {
-                if (fn) {
-                    fn(function (err) {
-                        var args = Array.prototype.slice.call(arguments, 1);
-                        if (args.length <= 1) {
-                            args = args[0];
-                        }
-                        callback.call(null, err, args);
-                    });
-                }
-            }, callback);
-        }
-        else {
-            var results = {};
-            async.eachSeries(_keys(tasks), function (k, callback) {
-                tasks[k](function (err) {
-                    var args = Array.prototype.slice.call(arguments, 1);
-                    if (args.length <= 1) {
-                        args = args[0];
-                    }
-                    results[k] = args;
-                    callback(err);
-                });
-            }, function (err) {
-                callback(err, results);
-            });
-        }
-    };
-
-    async.iterator = function (tasks) {
-        var makeCallback = function (index) {
-            var fn = function () {
-                if (tasks.length) {
-                    tasks[index].apply(null, arguments);
-                }
-                return fn.next();
-            };
-            fn.next = function () {
-                return (index < tasks.length - 1) ? makeCallback(index + 1): null;
-            };
-            return fn;
-        };
-        return makeCallback(0);
-    };
-
-    async.apply = function (fn) {
-        var args = Array.prototype.slice.call(arguments, 1);
-        return function () {
-            return fn.apply(
-                null, args.concat(Array.prototype.slice.call(arguments))
-            );
-        };
-    };
-
-    var _concat = function (eachfn, arr, fn, callback) {
-        var r = [];
-        eachfn(arr, function (x, cb) {
-            fn(x, function (err, y) {
-                r = r.concat(y || []);
-                cb(err);
-            });
-        }, function (err) {
-            callback(err, r);
-        });
-    };
-    async.concat = doParallel(_concat);
-    async.concatSeries = doSeries(_concat);
-
-    async.whilst = function (test, iterator, callback) {
-        if (test()) {
-            iterator(function (err) {
-                if (err) {
-                    return callback(err);
-                }
-                async.whilst(test, iterator, callback);
-            });
-        }
-        else {
-            callback();
-        }
-    };
-
-    async.doWhilst = function (iterator, test, callback) {
-        iterator(function (err) {
-            if (err) {
-                return callback(err);
-            }
-            var args = Array.prototype.slice.call(arguments, 1);
-            if (test.apply(null, args)) {
-                async.doWhilst(iterator, test, callback);
-            }
-            else {
-                callback();
-            }
-        });
-    };
-
-    async.until = function (test, iterator, callback) {
-        if (!test()) {
-            iterator(function (err) {
-                if (err) {
-                    return callback(err);
-                }
-                async.until(test, iterator, callback);
-            });
-        }
-        else {
-            callback();
-        }
-    };
-
-    async.doUntil = function (iterator, test, callback) {
-        iterator(function (err) {
-            if (err) {
-                return callback(err);
-            }
-            var args = Array.prototype.slice.call(arguments, 1);
-            if (!test.apply(null, args)) {
-                async.doUntil(iterator, test, callback);
-            }
-            else {
-                callback();
-            }
-        });
-    };
-
-    async.queue = function (worker, concurrency) {
-        if (concurrency === undefined) {
-            concurrency = 1;
-        }
-        function _insert(q, data, pos, callback) {
-          if (!q.started){
-            q.started = true;
-          }
-          if (!_isArray(data)) {
-              data = [data];
-          }
-          if(data.length == 0) {
-             // call drain immediately if there are no tasks
-             return async.setImmediate(function() {
-                 if (q.drain) {
-                     q.drain();
-                 }
-             });
-          }
-          _each(data, function(task) {
-              var item = {
-                  data: task,
-                  callback: typeof callback === 'function' ? callback : null
-              };
-
-              if (pos) {
-                q.tasks.unshift(item);
-              } else {
-                q.tasks.push(item);
-              }
-
-              if (q.saturated && q.tasks.length === q.concurrency) {
-                  q.saturated();
-              }
-              async.setImmediate(q.process);
-          });
-        }
-
-        var workers = 0;
-        var q = {
-            tasks: [],
-            concurrency: concurrency,
-            saturated: null,
-            empty: null,
-            drain: null,
-            started: false,
-            paused: false,
-            push: function (data, callback) {
-              _insert(q, data, false, callback);
-            },
-            kill: function () {
-              q.drain = null;
-              q.tasks = [];
-            },
-            unshift: function (data, callback) {
-              _insert(q, data, true, callback);
-            },
-            process: function () {
-                if (!q.paused && workers < q.concurrency && q.tasks.length) {
-                    var task = q.tasks.shift();
-                    if (q.empty && q.tasks.length === 0) {
-                        q.empty();
-                    }
-                    workers += 1;
-                    var next = function () {
-                        workers -= 1;
-                        if (task.callback) {
-                            task.callback.apply(task, arguments);
-                        }
-                        if (q.drain && q.tasks.length + workers === 0) {
-                            q.drain();
-                        }
-                        q.process();
-                    };
-                    var cb = only_once(next);
-                    worker(task.data, cb);
-                }
-            },
-            length: function () {
-                return q.tasks.length;
-            },
-            running: function () {
-                return workers;
-            },
-            idle: function() {
-                return q.tasks.length + workers === 0;
-            },
-            pause: function () {
-                if (q.paused === true) { return; }
-                q.paused = true;
-            },
-            resume: function () {
-                if (q.paused === false) { return; }
-                q.paused = false;
-                // Need to call q.process once per concurrent
-                // worker to preserve full concurrency after pause
-                for (var w = 1; w <= q.concurrency; w++) {
-                    async.setImmediate(q.process);
-                }
-            }
-        };
-        return q;
-    };
-
-    async.priorityQueue = function (worker, concurrency) {
-
-        function _compareTasks(a, b){
-          return a.priority - b.priority;
-        };
-
-        function _binarySearch(sequence, item, compare) {
-          var beg = -1,
-              end = sequence.length - 1;
-          while (beg < end) {
-            var mid = beg + ((end - beg + 1) >>> 1);
-            if (compare(item, sequence[mid]) >= 0) {
-              beg = mid;
-            } else {
-              end = mid - 1;
-            }
-          }
-          return beg;
-        }
-
-        function _insert(q, data, priority, callback) {
-          if (!q.started){
-            q.started = true;
-          }
-          if (!_isArray(data)) {
-              data = [data];
-          }
-          if(data.length == 0) {
-             // call drain immediately if there are no tasks
-             return async.setImmediate(function() {
-                 if (q.drain) {
-                     q.drain();
-                 }
-             });
-          }
-          _each(data, function(task) {
-              var item = {
-                  data: task,
-                  priority: priority,
-                  callback: typeof callback === 'function' ? callback : null
-              };
-
-              q.tasks.splice(_binarySearch(q.tasks, item, _compareTasks) + 1, 0, item);
-
-              if (q.saturated && q.tasks.length === q.concurrency) {
-                  q.saturated();
-              }
-              async.setImmediate(q.process);
-          });
-        }
-
-        // Start with a normal queue
-        var q = async.queue(worker, concurrency);
-
-        // Override push to accept second parameter representing priority
-        q.push = function (data, priority, callback) {
-          _insert(q, data, priority, callback);
-        };
-
-        // Remove unshift function
-        delete q.unshift;
-
-        return q;
-    };
-
-    async.cargo = function (worker, payload) {
-        var working     = false,
-            tasks       = [];
-
-        var cargo = {
-            tasks: tasks,
-            payload: payload,
-            saturated: null,
-            empty: null,
-            drain: null,
-            drained: true,
-            push: function (data, callback) {
-                if (!_isArray(data)) {
-                    data = [data];
-                }
-                _each(data, function(task) {
-                    tasks.push({
-                        data: task,
-                        callback: typeof callback === 'function' ? callback : null
-                    });
-                    cargo.drained = false;
-                    if (cargo.saturated && tasks.length === payload) {
-                        cargo.saturated();
-                    }
-                });
-                async.setImmediate(cargo.process);
-            },
-            process: function process() {
-                if (working) return;
-                if (tasks.length === 0) {
-                    if(cargo.drain && !cargo.drained) cargo.drain();
-                    cargo.drained = true;
-                    return;
-                }
-
-                var ts = typeof payload === 'number'
-                            ? tasks.splice(0, payload)
-                            : tasks.splice(0, tasks.length);
-
-                var ds = _map(ts, function (task) {
-                    return task.data;
-                });
-
-                if(cargo.empty) cargo.empty();
-                working = true;
-                worker(ds, function () {
-                    working = false;
-
-                    var args = arguments;
-                    _each(ts, function (data) {
-                        if (data.callback) {
-                            data.callback.apply(null, args);
-                        }
-                    });
-
-                    process();
-                });
-            },
-            length: function () {
-                return tasks.length;
-            },
-            running: function () {
-                return working;
-            }
-        };
-        return cargo;
-    };
-
-    var _console_fn = function (name) {
-        return function (fn) {
-            var args = Array.prototype.slice.call(arguments, 1);
-            fn.apply(null, args.concat([function (err) {
-                var args = Array.prototype.slice.call(arguments, 1);
-                if (typeof console !== 'undefined') {
-                    if (err) {
-                        if (console.error) {
-                            console.error(err);
-                        }
-                    }
-                    else if (console[name]) {
-                        _each(args, function (x) {
-                            console[name](x);
-                        });
-                    }
-                }
-            }]));
-        };
-    };
-    async.log = _console_fn('log');
-    async.dir = _console_fn('dir');
-    /*async.info = _console_fn('info');
-    async.warn = _console_fn('warn');
-    async.error = _console_fn('error');*/
-
-    async.memoize = function (fn, hasher) {
-        var memo = {};
-        var queues = {};
-        hasher = hasher || function (x) {
-            return x;
-        };
-        var memoized = function () {
-            var args = Array.prototype.slice.call(arguments);
-            var callback = args.pop();
-            var key = hasher.apply(null, args);
-            if (key in memo) {
-                async.nextTick(function () {
-                    callback.apply(null, memo[key]);
-                });
-            }
-            else if (key in queues) {
-                queues[key].push(callback);
-            }
-            else {
-                queues[key] = [callback];
-                fn.apply(null, args.concat([function () {
-                    memo[key] = arguments;
-                    var q = queues[key];
-                    delete queues[key];
-                    for (var i = 0, l = q.length; i < l; i++) {
-                      q[i].apply(null, arguments);
-                    }
-                }]));
-            }
-        };
-        memoized.memo = memo;
-        memoized.unmemoized = fn;
-        return memoized;
-    };
-
-    async.unmemoize = function (fn) {
-      return function () {
-        return (fn.unmemoized || fn).apply(null, arguments);
-      };
-    };
-
-    async.times = function (count, iterator, callback) {
-        var counter = [];
-        for (var i = 0; i < count; i++) {
-            counter.push(i);
-        }
-        return async.map(counter, iterator, callback);
-    };
-
-    async.timesSeries = function (count, iterator, callback) {
-        var counter = [];
-        for (var i = 0; i < count; i++) {
-            counter.push(i);
-        }
-        return async.mapSeries(counter, iterator, callback);
-    };
-
-    async.seq = function (/* functions... */) {
-        var fns = arguments;
-        return function () {
-            var that = this;
-            var args = Array.prototype.slice.call(arguments);
-            var callback = args.pop();
-            async.reduce(fns, args, function (newargs, fn, cb) {
-                fn.apply(that, newargs.concat([function () {
-                    var err = arguments[0];
-                    var nextargs = Array.prototype.slice.call(arguments, 1);
-                    cb(err, nextargs);
-                }]))
-            },
-            function (err, results) {
-                callback.apply(that, [err].concat(results));
-            });
-        };
-    };
-
-    async.compose = function (/* functions... */) {
-      return async.seq.apply(null, Array.prototype.reverse.call(arguments));
-    };
-
-    var _applyEach = function (eachfn, fns /*args...*/) {
-        var go = function () {
-            var that = this;
-            var args = Array.prototype.slice.call(arguments);
-            var callback = args.pop();
-            return eachfn(fns, function (fn, cb) {
-                fn.apply(that, args.concat([cb]));
-            },
-            callback);
-        };
-        if (arguments.length > 2) {
-            var args = Array.prototype.slice.call(arguments, 2);
-            return go.apply(this, args);
-        }
-        else {
-            return go;
-        }
-    };
-    async.applyEach = doParallel(_applyEach);
-    async.applyEachSeries = doSeries(_applyEach);
-
-    async.forever = function (fn, callback) {
-        function next(err) {
-            if (err) {
-                if (callback) {
-                    return callback(err);
-                }
-                throw err;
-            }
-            fn(next);
-        }
-        next();
-    };
-
-    // Node.js
-    if (typeof module !== 'undefined' && module.exports) {
-        module.exports = async;
-    }
-    // AMD / RequireJS
-    else if (typeof define !== 'undefined' && define.amd) {
-        define([], function () {
-            return async;
-        });
-    }
-    // included directly via <script> tag
-    else {
-        root.async = async;
+  } else {
+    for (var i = 0, events = [], length = listeners.length; i < length; i++) {
+      if (
+           listeners[i].fn !== fn
+        || (once && !listeners[i].once)
+        || (context && listeners[i].context !== context)
+      ) {
+        events.push(listeners[i]);
+      }
     }
 
-}());
+    //
+    // Reset the array, or remove it completely if we have no more listeners.
+    //
+    if (events.length) this._events[evt] = events.length === 1 ? events[0] : events;
+    else if (--this._eventsCount === 0) this._events = new Events();
+    else delete this._events[evt];
+  }
 
-}).call(this,require('_process'))
+  return this;
+};
 
-},{"_process":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/process/browser.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/Loader.js":[function(require,module,exports){
-var async       = require('async'),
-    urlParser   = require('url'),
-    Resource    = require('./Resource'),
-    EventEmitter = require('eventemitter3');
+/**
+ * Remove all listeners, or those of the specified event.
+ *
+ * @param {String|Symbol} [event] The event name.
+ * @returns {EventEmitter} `this`.
+ * @api public
+ */
+EventEmitter.prototype.removeAllListeners = function removeAllListeners(event) {
+  var evt;
+
+  if (event) {
+    evt = prefix ? prefix + event : event;
+    if (this._events[evt]) {
+      if (--this._eventsCount === 0) this._events = new Events();
+      else delete this._events[evt];
+    }
+  } else {
+    this._events = new Events();
+    this._eventsCount = 0;
+  }
+
+  return this;
+};
+
+//
+// Alias methods names because people roll like that.
+//
+EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
+EventEmitter.prototype.addListener = EventEmitter.prototype.on;
+
+//
+// This function doesn't apply anymore.
+//
+EventEmitter.prototype.setMaxListeners = function setMaxListeners() {
+  return this;
+};
+
+//
+// Expose the prefix.
+//
+EventEmitter.prefixed = prefix;
+
+//
+// Allow `EventEmitter` to be imported as module namespace.
+//
+EventEmitter.EventEmitter = EventEmitter;
+
+//
+// Expose the module.
+//
+if ('undefined' !== typeof module) {
+  module.exports = EventEmitter;
+}
+
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Loader.js":[function(require,module,exports){
+'use strict';
+
+var parseUri        = require('parse-uri');
+var async           = require('./async');
+var Resource        = require('./Resource');
+var EventEmitter    = require('eventemitter3');
+
+// some constants
+var DEFAULT_CONCURRENCY = 10;
+var MAX_PROGRESS = 100;
 
 /**
  * Manages the state and loading of multiple resources to load.
  *
  * @class
- * @param [baseUrl=''] {string} The base url for all resources loaded by this loader.
- * @param [concurrency=10] {number} The number of resources to load concurrently.
+ * @param {string} [baseUrl=''] - The base url for all resources loaded by this loader.
+ * @param {number} [concurrency=10] - The number of resources to load concurrently.
  */
 function Loader(baseUrl, concurrency) {
     EventEmitter.call(this);
 
-    concurrency = concurrency || 10;
+    concurrency = concurrency || DEFAULT_CONCURRENCY;
 
     /**
      * The base url for all resources loaded by this loader.
@@ -27075,14 +25678,6 @@ function Loader(baseUrl, concurrency) {
      * @member {function}
      */
     this._boundLoadResource = this._loadResource.bind(this);
-
-    /**
-     * The `_onLoad` function bound with this object context.
-     *
-     * @private
-     * @member {function}
-     */
-    this._boundOnLoad = this._onLoad.bind(this);
 
     /**
      * The resource buffer that fills until `load` is called to start loading resources.
@@ -27192,19 +25787,23 @@ module.exports = Loader;
  *         { name: 'key4', url: 'http://...', onComplete: function () {} },
  *         { url: 'http://...', onComplete: function () {} },
  *         'http://...'
- *     ]);
+ *     ])
+ *
+ *     // and you can use both params and options
+ *     .add('key', 'http://...', { crossOrigin: true }, function () {})
+ *     .add('http://...', { crossOrigin: true }, function () {});
  * ```
  *
  * @alias enqueue
- * @param [name] {string} The name of the resource to load, if not passed the url is used.
- * @param url {string} The url for this resource, relative to the baseUrl of this loader.
- * @param [options] {object} The options for the load.
- * @param [options.crossOrigin] {boolean} Is this request cross-origin? Default is to determine automatically.
- * @param [options.loadType=Resource.LOAD_TYPE.XHR] {Resource.XHR_LOAD_TYPE} How should this resource be loaded?
- * @param [options.xhrType=Resource.XHR_RESPONSE_TYPE.DEFAULT] {Resource.XHR_RESPONSE_TYPE} How should the data being
+ * @param {string} [name] - The name of the resource to load, if not passed the url is used.
+ * @param {string} [url] - The url for this resource, relative to the baseUrl of this loader.
+ * @param {object} [options] - The options for the load.
+ * @param {boolean} [options.crossOrigin] - Is this request cross-origin? Default is to determine automatically.
+ * @param {Resource.XHR_LOAD_TYPE} [options.loadType=Resource.LOAD_TYPE.XHR] - How should this resource be loaded?
+ * @param {Resource.XHR_RESPONSE_TYPE} [options.xhrType=Resource.XHR_RESPONSE_TYPE.DEFAULT] - How should the data being
  *      loaded be interpreted when using XHR?
- * @param [callback] {function} Function to call when this specific resource completes loading.
- * @return {Loader}
+ * @param {function} [cb] - Function to call when this specific resource completes loading.
+ * @return {Loader} Returns itself.
  */
 Loader.prototype.add = Loader.prototype.enqueue = function (name, url, options, cb) {
     // special case of an array of objects or urls
@@ -27248,7 +25847,7 @@ Loader.prototype.add = Loader.prototype.enqueue = function (name, url, options, 
     }
 
     // add base url if this isn't an absolute url
-    url = this._handleBaseUrl(url);
+    url = this._prepareUrl(url);
 
     // create the store the resource
     this.resources[name] = new Resource(name, url, options);
@@ -27262,46 +25861,25 @@ Loader.prototype.add = Loader.prototype.enqueue = function (name, url, options, 
     // if already loading add it to the worker queue
     if (this._queue.started) {
         this._queue.push(this.resources[name]);
-        this._progressChunk = (100 - this.progress) / (this._queue.length() + this._queue.running());
+        this._progressChunk = (MAX_PROGRESS - this.progress) / (this._queue.length() + this._queue.running());
     }
     // otherwise buffer it to be added to the queue later
     else {
         this._buffer.push(this.resources[name]);
-        this._progressChunk = 100 / this._buffer.length;
+        this._progressChunk = MAX_PROGRESS / this._buffer.length;
     }
 
     return this;
 };
-
-Loader.prototype._handleBaseUrl = function (url) {
-    var parsedUrl = urlParser.parse(url);
-
-    // absolute url, just use it as is.
-    if (parsedUrl.protocol || !parsedUrl.pathname || parsedUrl.pathname.indexOf('//') === 0) {
-        return url;
-    }
-
-    // if baseUrl doesn't end in slash and url doesn't start with slash, then add a slash inbetween
-    if (
-        this.baseUrl.length &&
-        this.baseUrl.lastIndexOf('/') !== this.baseUrl.length - 1 &&
-        url.charAt(0) !== '/'
-    ) {
-        return this.baseUrl + '/' + url;
-    }
-    else {
-        return this.baseUrl + url;
-    }
-};
-
 
 /**
  * Sets up a middleware function that will run *before* the
  * resource is loaded.
  *
  * @alias pre
- * @param middleware {function} The middleware function to register.
- * @return {Loader}
+ * @method before
+ * @param {function} fn - The middleware function to register.
+ * @return {Loader} Returns itself.
  */
 Loader.prototype.before = Loader.prototype.pre = function (fn) {
     this._beforeMiddleware.push(fn);
@@ -27314,8 +25892,9 @@ Loader.prototype.before = Loader.prototype.pre = function (fn) {
  * resource is loaded.
  *
  * @alias use
- * @param middleware {function} The middleware function to register.
- * @return {Loader}
+ * @method after
+ * @param {function} fn - The middleware function to register.
+ * @return {Loader} Returns itself.
  */
 Loader.prototype.after = Loader.prototype.use = function (fn) {
     this._afterMiddleware.push(fn);
@@ -27326,7 +25905,7 @@ Loader.prototype.after = Loader.prototype.use = function (fn) {
 /**
  * Resets the queue of the loader to prepare for a new load.
  *
- * @return {Loader}
+ * @return {Loader} Returns itself.
  */
 Loader.prototype.reset = function () {
     // this.baseUrl = baseUrl || '';
@@ -27347,15 +25926,28 @@ Loader.prototype.reset = function () {
     this._queue.kill();
     this._queue.started = false;
 
+    // abort all resource loads
+    for (var k in this.resources) {
+        var res = this.resources[k];
+
+        res.off('complete', this._onLoad, this);
+
+        if (res.isLoading) {
+            res.abort();
+        }
+    }
+
     this.resources = {};
+
+    return this;
 };
 
 /**
  * Starts loading the queued resources.
  *
  * @fires start
- * @param [callback] {function} Optional callback that will be bound to the `complete` event.
- * @return {Loader}
+ * @param {function} [cb] - Optional callback that will be bound to the `complete` event.
+ * @return {Loader} Returns itself.
  */
 Loader.prototype.load = function (cb) {
     // register complete callback if they pass one
@@ -27371,6 +25963,9 @@ Loader.prototype.load = function (cb) {
     // notify of start
     this.emit('start', this);
 
+    // update loading state
+    this.loading = true;
+
     // start the internal queue
     for (var i = 0; i < this._buffer.length; ++i) {
         this._queue.push(this._buffer[i]);
@@ -27383,21 +25978,65 @@ Loader.prototype.load = function (cb) {
 };
 
 /**
+ * Prepares a url for usage based on the configuration of this object
+ *
+ * @private
+ * @param {string} url - The url to prepare.
+ * @return {string} The prepared url.
+ */
+Loader.prototype._prepareUrl = function (url) {
+    var parsedUrl = parseUri(url, { strictMode: true });
+
+    // absolute url, just use it as is.
+    if (parsedUrl.protocol || !parsedUrl.path || parsedUrl.path.indexOf('//') === 0) {
+        return url;
+    }
+
+    // if baseUrl doesn't end in slash and url doesn't start with slash, then add a slash inbetween
+    if (this.baseUrl.length
+        && this.baseUrl.lastIndexOf('/') !== this.baseUrl.length - 1
+        && url.charAt(0) !== '/'
+    ) {
+        return this.baseUrl + '/' + url;
+    }
+
+    return this.baseUrl + url;
+};
+
+/**
  * Loads a single resource.
  *
- * @fires progress
  * @private
+ * @param {Resource} resource - The resource to load.
+ * @param {function} dequeue - The function to call when we need to dequeue this item.
  */
 Loader.prototype._loadResource = function (resource, dequeue) {
     var self = this;
 
     resource._dequeue = dequeue;
 
-    this._runMiddleware(resource, this._beforeMiddleware, function () {
-        // resource.on('progress', self.emit.bind(self, 'progress'));
+    // run before middleware
+    async.eachSeries(
+        this._beforeMiddleware,
+        function (fn, next) {
+            fn.call(self, resource, function () {
+                // if the before middleware marks the resource as complete,
+                // break and don't process any more before middleware
+                next(resource.isComplete ? {} : null);
+            });
+        },
+        function () {
+            // resource.on('progress', self.emit.bind(self, 'progress'));
 
-        resource.load(self._boundOnLoad);
-    });
+            if (resource.isComplete) {
+                self._onLoad(resource);
+            }
+            else {
+                resource.once('complete', self._onLoad, self);
+                resource.load();
+            }
+        }
+    );
 };
 
 /**
@@ -27407,6 +26046,8 @@ Loader.prototype._loadResource = function (resource, dequeue) {
  * @private
  */
 Loader.prototype._onComplete = function () {
+    this.loading = false;
+
     this.emit('complete', this, this.resources);
 };
 
@@ -27417,75 +26058,75 @@ Loader.prototype._onComplete = function () {
  * @fires error
  * @fires load
  * @private
+ * @param {Resource} resource - The resource that was loaded
  */
 Loader.prototype._onLoad = function (resource) {
-    this.progress += this._progressChunk;
-
-    this.emit('progress', this, resource);
+    var self = this;
 
     // run middleware, this *must* happen before dequeue so sub-assets get added properly
-    this._runMiddleware(resource, this._afterMiddleware, function () {
-        resource.emit('afterMiddleware', resource);
+    async.eachSeries(
+        this._afterMiddleware,
+        function (fn, next) {
+            fn.call(self, resource, next);
+        },
+        function () {
+            resource.emit('afterMiddleware', resource);
 
-        this._numToLoad--;
+            self._numToLoad--;
 
-        if (resource.error) {
-            this.emit('error', resource.error, this, resource);
+            self.progress += self._progressChunk;
+            self.emit('progress', self, resource);
+
+            if (resource.error) {
+                self.emit('error', resource.error, self, resource);
+            }
+            else {
+                self.emit('load', self, resource);
+            }
+
+            // do completion check
+            if (self._numToLoad === 0) {
+                self.progress = 100;
+                self._onComplete();
+            }
         }
-        else {
-            this.emit('load', this, resource);
-        }
-
-        // do completion check
-        if (this._numToLoad === 0) {
-            this.progress = 100;
-            this._onComplete();
-        }
-    });
-    
-
+    );
 
     // remove this resource from the async queue
     resource._dequeue();
 };
 
-/**
- * Run middleware functions on a resource.
- *
- * @private
- */
-Loader.prototype._runMiddleware = function (resource, fns, cb) {
-    var self = this;
-
-    async.eachSeries(fns, function (fn, next) {
-        fn.call(self, resource, next);
-    }, cb.bind(this, resource));
-};
-
 Loader.LOAD_TYPE = Resource.LOAD_TYPE;
-Loader.XHR_READY_STATE = Resource.XHR_READY_STATE;
 Loader.XHR_RESPONSE_TYPE = Resource.XHR_RESPONSE_TYPE;
 
-},{"./Resource":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/Resource.js","async":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/node_modules/async/lib/async.js","eventemitter3":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/eventemitter3/index.js","url":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/url/url.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/Resource.js":[function(require,module,exports){
-var EventEmitter = require('eventemitter3'),
-    _url = require('url'),
-    // tests is CORS is supported in XHR, if not we need to use XDR
-    useXdr = !!(window.XDomainRequest && !('withCredentials' in (new XMLHttpRequest()))),
-    tempAnchor = null;
+},{"./Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","./async":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/async.js","eventemitter3":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/node_modules/eventemitter3/index.js","parse-uri":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/parse-uri/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js":[function(require,module,exports){
+'use strict';
+
+var EventEmitter    = require('eventemitter3');
+var parseUri        = require('parse-uri');
+
+// tests is CORS is supported in XHR, if not we need to use XDR
+var useXdr = !!(window.XDomainRequest && !('withCredentials' in (new XMLHttpRequest())));
+var tempAnchor = null;
+
+// some status constants
+var STATUS_NONE = 0;
+var STATUS_OK = 200;
+var STATUS_EMPTY = 204;
 
 /**
  * Manages the state and loading of a single resource represented by
  * a single URL.
  *
  * @class
- * @param name {string} The name of the resource to load.
- * @param url {string|string[]} The url for this resource, for audio/video loads you can pass an array of sources.
- * @param [options] {object} The options for the load.
- * @param [options.crossOrigin] {string|boolean} Is this request cross-origin? Default is to determine automatically.
- * @param [options.loadType=Resource.LOAD_TYPE.XHR] {Resource.LOAD_TYPE} How should this resource be loaded?
- * @param [options.xhrType=Resource.XHR_RESPONSE_TYPE.DEFAULT] {Resource.XHR_RESPONSE_TYPE} How should the data being
+ * @param {string} name - The name of the resource to load.
+ * @param {string|string[]} url - The url for this resource, for audio/video loads you can pass an array of sources.
+ * @param {object} [options] - The options for the load.
+ * @param {string|boolean} [options.crossOrigin] - Is this request cross-origin? Default is to determine automatically.
+ * @param {Resource.LOAD_TYPE} [options.loadType=Resource.LOAD_TYPE.XHR] - How should this resource be loaded?
+ * @param {Resource.XHR_RESPONSE_TYPE} [options.xhrType=Resource.XHR_RESPONSE_TYPE.DEFAULT] - How should the data being
  *      loaded be interpreted when using XHR?
- * @param [options.metadata] {object} Extra info for middleware.
+ * @param {object} [options.metadata] - Extra info for middleware.
  */
 function Resource(name, url, options) {
     EventEmitter.call(this);
@@ -27549,9 +26190,17 @@ function Resource(name, url, options) {
     this.xhrType = options.xhrType;
 
     /**
-     * Extra info for middleware
+     * Extra info for middleware, and controlling specifics about how the resource loads.
+     *
+     * Note that if you pass in a `loadElement`, the Resource class takes ownership of it.
+     * Meaning it will modify it as it sees fit.
      *
      * @member {object}
+     * @property {HTMLImageElement|HTMLAudioElement|HTMLVideoElement} [loadElement=null] - The
+     *  element to use for loading, instead of creating one.
+     * @property {boolean} [skipSource=false] - Skips adding source(s) to the load element. This
+     *  is useful if you want to pass in a `loadElement` that you already added load sources
+     *  to.
      */
     this.metadata = options.metadata || {};
 
@@ -27612,35 +26261,51 @@ function Resource(name, url, options) {
     this.isVideo = false;
 
     /**
+     * Describes if this resource has finished loading. Is true when the resource has completely
+     * loaded.
+     *
+     * @member {boolean}
+     */
+    this.isComplete = false;
+
+    /**
+     * Describes if this resource is currently loading. Is true when the resource starts loading,
+     * and is false again when complete.
+     *
+     * @member {boolean}
+     */
+    this.isLoading = false;
+
+    /**
      * The `dequeue` method that will be used a storage place for the async queue dequeue method
      * used privately by the loader.
      *
-     * @member {function}
      * @private
+     * @member {function}
      */
     this._dequeue = null;
 
     /**
      * The `complete` function bound to this resource's context.
      *
-     * @member {function}
      * @private
+     * @member {function}
      */
     this._boundComplete = this.complete.bind(this);
 
     /**
      * The `_onError` function bound to this resource's context.
      *
-     * @member {function}
      * @private
+     * @member {function}
      */
     this._boundOnError = this._onError.bind(this);
 
     /**
      * The `_onProgress` function bound to this resource's context.
      *
-     * @member {function}
      * @private
+     * @member {function}
      */
     this._boundOnProgress = this._onProgress.bind(this);
 
@@ -27689,18 +26354,18 @@ module.exports = Resource;
 Resource.prototype.complete = function () {
     // TODO: Clean this up in a wrapper or something...gross....
     if (this.data && this.data.removeEventListener) {
-        this.data.removeEventListener('error', this._boundOnError);
-        this.data.removeEventListener('load', this._boundComplete);
-        this.data.removeEventListener('progress', this._boundOnProgress);
-        this.data.removeEventListener('canplaythrough', this._boundComplete);
+        this.data.removeEventListener('error', this._boundOnError, false);
+        this.data.removeEventListener('load', this._boundComplete, false);
+        this.data.removeEventListener('progress', this._boundOnProgress, false);
+        this.data.removeEventListener('canplaythrough', this._boundComplete, false);
     }
 
     if (this.xhr) {
         if (this.xhr.removeEventListener) {
-            this.xhr.removeEventListener('error', this._boundXhrOnError);
-            this.xhr.removeEventListener('abort', this._boundXhrOnAbort);
-            this.xhr.removeEventListener('progress', this._boundOnProgress);
-            this.xhr.removeEventListener('load', this._boundXhrOnLoad);
+            this.xhr.removeEventListener('error', this._boundXhrOnError, false);
+            this.xhr.removeEventListener('abort', this._boundXhrOnAbort, false);
+            this.xhr.removeEventListener('progress', this._boundOnProgress, false);
+            this.xhr.removeEventListener('load', this._boundXhrOnLoad, false);
         }
         else {
             this.xhr.onerror = null;
@@ -27710,39 +26375,100 @@ Resource.prototype.complete = function () {
         }
     }
 
+    if (this.isComplete) {
+        throw new Error('Complete called again for an already completed resource.');
+    }
+
+    this.isComplete = true;
+    this.isLoading = false;
+
     this.emit('complete', this);
 };
 
 /**
- * Kicks off loading of this resource.
+ * Aborts the loading of this resource, with an optional message.
+ *
+ * @param {string} message - The message to use for the error
+ */
+Resource.prototype.abort = function (message) {
+    // abort can be called multiple times, ignore subsequent calls.
+    if (this.error) {
+        return;
+    }
+
+    // store error
+    this.error = new Error(message);
+
+    // abort the actual loading
+    if (this.xhr) {
+        this.xhr.abort();
+    }
+    else if (this.xdr) {
+        this.xdr.abort();
+    }
+    else if (this.data) {
+        // single source
+        if (typeof this.data.src !== 'undefined') {
+            this.data.src = '';
+        }
+        // multi-source
+        else {
+            while (this.data.firstChild) {
+                this.data.removeChild(this.data.firstChild);
+            }
+        }
+    }
+
+    // done now.
+    this.complete();
+};
+
+/**
+ * Kicks off loading of this resource. This method is asynchronous.
  *
  * @fires start
- * @param [callback] {function} Optional callback to call once the resource is loaded.
+ * @param {function} [cb] - Optional callback to call once the resource is loaded.
  */
 Resource.prototype.load = function (cb) {
-    this.emit('start', this);
+    if (this.isLoading) {
+        return;
+    }
 
-    // if a callback is set, listen for complete event
-    if (cb) {
+    if (this.isComplete) {
+        if (cb) {
+            var self = this;
+
+            setTimeout(function () {
+                cb(self);
+            }, 1);
+        }
+
+        return;
+    }
+    else if (cb) {
         this.once('complete', cb);
     }
+
+    this.isLoading = true;
+
+    this.emit('start', this);
 
     // if unset, determine the value
     if (this.crossOrigin === false || typeof this.crossOrigin !== 'string') {
         this.crossOrigin = this._determineCrossOrigin(this.url);
     }
 
-    switch(this.loadType) {
+    switch (this.loadType) {
         case Resource.LOAD_TYPE.IMAGE:
-            this._loadImage();
+            this._loadElement('image');
             break;
 
         case Resource.LOAD_TYPE.AUDIO:
-            this._loadElement('audio');
+            this._loadSourceElement('audio');
             break;
 
         case Resource.LOAD_TYPE.VIDEO:
-            this._loadElement('video');
+            this._loadSourceElement('video');
             break;
 
         case Resource.LOAD_TYPE.XHR:
@@ -27759,20 +26485,36 @@ Resource.prototype.load = function (cb) {
 };
 
 /**
- * Loads this resources using an Image object.
+ * Loads this resources using an element that has a single source,
+ * like an HTMLImageElement.
  *
  * @private
+ * @param {string} type - The type of element to use.
  */
-Resource.prototype._loadImage = function () {
-    this.data = new Image();
+Resource.prototype._loadElement = function (type) {
+    if (this.metadata.loadElement) {
+        this.data = this.metadata.loadElement;
+    }
+    else if (type === 'image' && typeof window.Image !== 'undefined') {
+        this.data = new Image();
+    }
+    else {
+        this.data = document.createElement(type);
+    }
 
     if (this.crossOrigin) {
         this.data.crossOrigin = this.crossOrigin;
     }
 
-    this.data.src = this.url;
+    if (!this.metadata.skipSource) {
+        this.data.src = this.url;
+    }
 
-    this.isImage = true;
+    var typeName = 'is' + type[0].toUpperCase() + type.substring(1);
+
+    if (this[typeName] === false) {
+        this[typeName] = true;
+    }
 
     this.data.addEventListener('error', this._boundOnError, false);
     this.data.addEventListener('load', this._boundComplete, false);
@@ -27780,12 +26522,17 @@ Resource.prototype._loadImage = function () {
 };
 
 /**
- * Loads this resources using an HTMLAudioElement or HTMLVideoElement.
+ * Loads this resources using an element that has multiple sources,
+ * like an HTMLAudioElement or HTMLVideoElement.
  *
  * @private
+ * @param {string} type - The type of element to use.
  */
-Resource.prototype._loadElement = function (type) {
-    if (type === 'audio' && typeof Audio !== 'undefined') {
+Resource.prototype._loadSourceElement = function (type) {
+    if (this.metadata.loadElement) {
+        this.data = this.metadata.loadElement;
+    }
+    else if (type === 'audio' && typeof window.Audio !== 'undefined') {
         this.data = new Audio();
     }
     else {
@@ -27793,17 +26540,17 @@ Resource.prototype._loadElement = function (type) {
     }
 
     if (this.data === null) {
-        this.error = new Error('Unsupported element ' + type);
-        this.complete();
+        this.abort('Unsupported element ' + type);
+
         return;
     }
 
-    // support for CocoonJS Canvas+ runtime, lacks document.createElement('source')
-    if (navigator.isCocoonJS) {
-        this.data.src = Array.isArray(this.url) ? this.url[0] : this.url;
-    }
-    else {
-        if (Array.isArray(this.url)) {
+    if (!this.metadata.skipSource) {
+        // support for CocoonJS Canvas+ runtime, lacks document.createElement('source')
+        if (navigator.isCocoonJS) {
+            this.data.src = Array.isArray(this.url) ? this.url[0] : this.url;
+        }
+        else if (Array.isArray(this.url)) {
             for (var i = 0; i < this.url.length; ++i) {
                 this.data.appendChild(this._createSource(type, this.url[i]));
             }
@@ -27881,8 +26628,9 @@ Resource.prototype._loadXdr = function () {
 
     xdr.open('GET', this.url, true);
 
-    //  Note: The xdr.send() call is wrapped in a timeout to prevent an issue with the interface where some requests are lost
-    //  if multiple XDomainRequests are being sent at the same time.
+    // Note: The xdr.send() call is wrapped in a timeout to prevent an
+    // issue with the interface where some requests are lost if multiple
+    // XDomainRequests are being sent at the same time.
     // Some info here: https://github.com/photonstorm/phaser/issues/1248
     setTimeout(function () {
         xdr.send();
@@ -27892,10 +26640,11 @@ Resource.prototype._loadXdr = function () {
 /**
  * Creates a source used in loading via an element.
  *
- * @param type {string} The element type (video or audio).
- * @param url {string} The source URL to load from.
- * @param [mime] {string} The mime type of the video
  * @private
+ * @param {string} type - The element type (video or audio).
+ * @param {string} url - The source URL to load from.
+ * @param {string} [mime] - The mime type of the video
+ * @return {HTMLSourceElement} The source element.
  */
 Resource.prototype._createSource = function (type, url, mime) {
     if (!mime) {
@@ -27913,22 +26662,21 @@ Resource.prototype._createSource = function (type, url, mime) {
 /**
  * Called if a load errors out.
  *
- * @param event {Event} The error event from the element that emits it.
+ * @param {Event} event - The error event from the element that emits it.
  * @private
  */
 Resource.prototype._onError = function (event) {
-    this.error = new Error('Failed to load element using ' + event.target.nodeName);
-    this.complete();
+    this.abort('Failed to load element using ' + event.target.nodeName);
 };
 
 /**
  * Called if a load progress event fires for xhr/xdr.
  *
  * @fires progress
- * @param event {XMLHttpRequestProgressEvent|Event}
  * @private
+ * @param {XMLHttpRequestProgressEvent|Event} event - Progress event.
  */
-Resource.prototype._onProgress =  function (event) {
+Resource.prototype._onProgress = function (event) {
     if (event && event.lengthComputable) {
         this.emit('progress', this, event.loaded / event.total);
     }
@@ -27937,52 +26685,47 @@ Resource.prototype._onProgress =  function (event) {
 /**
  * Called if an error event fires for xhr/xdr.
  *
- * @param event {XMLHttpRequestErrorEvent|Event}
  * @private
+ * @param {XMLHttpRequestErrorEvent|Event} event - Error event.
  */
 Resource.prototype._xhrOnError = function () {
-    this.error = new Error(
-        reqType(this.xhr) + ' Request failed. ' +
-        'Status: ' + this.xhr.status + ', text: "' + this.xhr.statusText + '"'
-    );
+    var xhr = this.xhr;
 
-    this.complete();
+    this.abort(reqType(xhr) + ' Request failed. Status: ' + xhr.status + ', text: "' + xhr.statusText + '"');
 };
 
 /**
  * Called if an abort event fires for xhr.
  *
- * @param event {XMLHttpRequestAbortEvent}
  * @private
+ * @param {XMLHttpRequestAbortEvent} event - Abort Event
  */
 Resource.prototype._xhrOnAbort = function () {
-    this.error = new Error(reqType(this.xhr) + ' Request was aborted by the user.');
-    this.complete();
+    this.abort(reqType(this.xhr) + ' Request was aborted by the user.');
 };
 
 /**
  * Called if a timeout event fires for xdr.
  *
- * @param event {Event}
  * @private
+ * @param {Event} event - Timeout event.
  */
 Resource.prototype._xdrOnTimeout = function () {
-    this.error = new Error(reqType(this.xhr) + ' Request timed out.');
-    this.complete();
+    this.abort(reqType(this.xhr) + ' Request timed out.');
 };
 
 /**
  * Called when data successfully loads from an xhr/xdr request.
  *
- * @param event {XMLHttpRequestLoadEvent|Event}
  * @private
+ * @param {XMLHttpRequestLoadEvent|Event} event - Load event
  */
 Resource.prototype._xhrOnLoad = function () {
-    var xhr = this.xhr,
-        status = xhr.status !== undefined ? xhr.status : 200; //XDR has no `.status`, assume 200.
+    var xhr = this.xhr;
+    var status = typeof xhr.status === 'undefined' ? xhr.status : STATUS_OK; // XDR has no `.status`, assume 200.
 
     // status can be 0 when using the file:// protocol, also check if a response was found
-    if (status === 200 || status === 204 || (status === 0 && xhr.responseText.length > 0)) {
+    if (status === STATUS_OK || status === STATUS_EMPTY || (status === STATUS_NONE && xhr.responseText.length > 0)) {
         // if text, just return it
         if (this.xhrType === Resource.XHR_RESPONSE_TYPE.TEXT) {
             this.data = xhr.responseText;
@@ -27992,8 +26735,11 @@ Resource.prototype._xhrOnLoad = function () {
             try {
                 this.data = JSON.parse(xhr.responseText);
                 this.isJson = true;
-            } catch(e) {
-                this.error = new Error('Error trying to parse loaded json:', e);
+            }
+            catch (e) {
+                this.abort('Error trying to parse loaded json:', e);
+
+                return;
             }
         }
         // if xml, parse into an xml document or div element
@@ -28001,16 +26747,21 @@ Resource.prototype._xhrOnLoad = function () {
             try {
                 if (window.DOMParser) {
                     var domparser = new DOMParser();
+
                     this.data = domparser.parseFromString(xhr.responseText, 'text/xml');
                 }
                 else {
                     var div = document.createElement('div');
+
                     div.innerHTML = xhr.responseText;
                     this.data = div;
                 }
                 this.isXml = true;
-            } catch (e) {
-                this.error = new Error('Error trying to parse loaded xml:', e);
+            }
+            catch (e) {
+                this.abort('Error trying to parse loaded xml:', e);
+
+                return;
             }
         }
         // other types just return the response
@@ -28019,15 +26770,13 @@ Resource.prototype._xhrOnLoad = function () {
         }
     }
     else {
-        this.error = new Error('[' + xhr.status + ']' + xhr.statusText + ':' + xhr.responseURL);
+        this.abort('[' + xhr.status + ']' + xhr.statusText + ':' + xhr.responseURL);
+
+        return;
     }
 
     this.complete();
 };
-
-function reqType(xhr) {
-    return xhr.toString().replace('object ', '');
-}
 
 /**
  * Sets the `crossOrigin` property for this resource based on if the url
@@ -28035,8 +26784,8 @@ function reqType(xhr) {
  * function does nothing.
  *
  * @private
- * @param url {string} The url to test.
- * @param [location=window.location] {object} The location object to test against.
+ * @param {string} url - The url to test.
+ * @param {object} [loc=window.location] - The location object to test against.
  * @return {string} The crossOrigin value to use (or empty string for none).
  */
 Resource.prototype._determineCrossOrigin = function (url, loc) {
@@ -28056,12 +26805,13 @@ Resource.prototype._determineCrossOrigin = function (url, loc) {
     // parse with the node url lib, we can't use the properties of the anchor element
     // because they don't work in IE9 :(
     tempAnchor.href = url;
-    url = _url.parse(tempAnchor.href);
+    url = parseUri(tempAnchor.href, { strictMode: true });
 
     var samePort = (!url.port && loc.port === '') || (url.port === loc.port);
+    var protocol = url.protocol ? url.protocol + ':' : '';
 
     // if cross origin
-    if (url.hostname !== loc.hostname || !samePort || url.protocol !== loc.protocol) {
+    if (url.host !== loc.hostname || !samePort || protocol !== loc.protocol) {
         return 'anonymous';
     }
 
@@ -28084,15 +26834,17 @@ Resource.prototype._determineLoadType = function () {
 };
 
 Resource.prototype._getExtension = function () {
-    var url = this.url,
-        ext;
+    var url = this.url;
+    var ext = '';
 
     if (this.isDataUrl) {
         var slashIndex = url.indexOf('/');
+
         ext = url.substring(slashIndex + 1, url.indexOf(';', slashIndex));
     }
     else {
         var queryStart = url.indexOf('?');
+
         if (queryStart !== -1) {
             url = url.substring(0, queryStart);
         }
@@ -28108,10 +26860,11 @@ Resource.prototype._getExtension = function () {
  * resource being loaded.
  *
  * @private
+ * @param {Resource.XHR_RESPONSE_TYPE} type - The type to get a mime type for.
  * @return {string} The mime type to use.
  */
 Resource.prototype._getMimeFromXhrType = function (type) {
-    switch(type) {
+    switch (type) {
         case Resource.XHR_RESPONSE_TYPE.BUFFER:
             return 'application/octet-binary';
 
@@ -28134,20 +26887,31 @@ Resource.prototype._getMimeFromXhrType = function (type) {
 };
 
 /**
+ * Quick helper to get string xhr type.
+ *
+ * @ignore
+ * @param {XMLHttpRequest|XDomainRequest} xhr - The request to check.
+ * @return {string} The type.
+ */
+function reqType(xhr) {
+    return xhr.toString().replace('object ', '');
+}
+
+/**
  * The types of loading a resource can use.
  *
  * @static
- * @constant
- * @property {object} LOAD_TYPE
- * @property {number} LOAD_TYPE.XHR - Uses XMLHttpRequest to load the resource.
- * @property {number} LOAD_TYPE.IMAGE - Uses an `Image` object to load the resource.
- * @property {number} LOAD_TYPE.AUDIO - Uses an `Audio` object to load the resource.
- * @property {number} LOAD_TYPE.VIDEO - Uses a `Video` object to load the resource.
+ * @readonly
+ * @enum {number}
  */
 Resource.LOAD_TYPE = {
+    /** Uses XMLHttpRequest to load the resource. */
     XHR:    1,
+    /** Uses an `Image` object to load the resource. */
     IMAGE:  2,
+    /** Uses an `Audio` object to load the resource. */
     AUDIO:  3,
+    /** Uses a `Video` object to load the resource. */
     VIDEO:  4
 };
 
@@ -28155,92 +26919,72 @@ Resource.LOAD_TYPE = {
  * The XHR ready states, used internally.
  *
  * @static
- * @constant
- * @property {object} XHR_READY_STATE
- * @property {number} XHR_READY_STATE.UNSENT - open()has not been called yet.
- * @property {number} XHR_READY_STATE.OPENED - send()has not been called yet.
- * @property {number} XHR_READY_STATE.HEADERS_RECEIVED - send() has been called, and headers and status are available.
- * @property {number} XHR_READY_STATE.LOADING - Downloading; responseText holds partial data.
- * @property {number} XHR_READY_STATE.DONE - The operation is complete.
- */
-Resource.XHR_READY_STATE = {
-    UNSENT: 0,
-    OPENED: 1,
-    HEADERS_RECEIVED: 2,
-    LOADING: 3,
-    DONE: 4
-};
-
-/**
- * The XHR ready states, used internally.
- *
- * @static
- * @constant
- * @property {object} XHR_RESPONSE_TYPE
- * @property {string} XHR_RESPONSE_TYPE.DEFAULT - defaults to text
- * @property {string} XHR_RESPONSE_TYPE.BUFFER - ArrayBuffer
- * @property {string} XHR_RESPONSE_TYPE.BLOB - Blob
- * @property {string} XHR_RESPONSE_TYPE.DOCUMENT - Document
- * @property {string} XHR_RESPONSE_TYPE.JSON - Object
- * @property {string} XHR_RESPONSE_TYPE.TEXT - String
+ * @readonly
+ * @enum {string}
  */
 Resource.XHR_RESPONSE_TYPE = {
+    /** defaults to text */
     DEFAULT:    'text',
+    /** ArrayBuffer */
     BUFFER:     'arraybuffer',
+    /** Blob */
     BLOB:       'blob',
+    /** Document */
     DOCUMENT:   'document',
+    /** Object */
     JSON:       'json',
+    /** String */
     TEXT:       'text'
 };
 
 Resource._loadTypeMap = {
-    'gif':      Resource.LOAD_TYPE.IMAGE,
-    'png':      Resource.LOAD_TYPE.IMAGE,
-    'bmp':      Resource.LOAD_TYPE.IMAGE,
-    'jpg':      Resource.LOAD_TYPE.IMAGE,
-    'jpeg':     Resource.LOAD_TYPE.IMAGE,
-    'tif':      Resource.LOAD_TYPE.IMAGE,
-    'tiff':     Resource.LOAD_TYPE.IMAGE,
-    'webp':     Resource.LOAD_TYPE.IMAGE,
-    'tga':      Resource.LOAD_TYPE.IMAGE,
+    gif:      Resource.LOAD_TYPE.IMAGE,
+    png:      Resource.LOAD_TYPE.IMAGE,
+    bmp:      Resource.LOAD_TYPE.IMAGE,
+    jpg:      Resource.LOAD_TYPE.IMAGE,
+    jpeg:     Resource.LOAD_TYPE.IMAGE,
+    tif:      Resource.LOAD_TYPE.IMAGE,
+    tiff:     Resource.LOAD_TYPE.IMAGE,
+    webp:     Resource.LOAD_TYPE.IMAGE,
+    tga:      Resource.LOAD_TYPE.IMAGE,
     'svg+xml':  Resource.LOAD_TYPE.IMAGE
 };
 
 Resource._xhrTypeMap = {
     // xml
-    'xhtml':    Resource.XHR_RESPONSE_TYPE.DOCUMENT,
-    'html':     Resource.XHR_RESPONSE_TYPE.DOCUMENT,
-    'htm':      Resource.XHR_RESPONSE_TYPE.DOCUMENT,
-    'xml':      Resource.XHR_RESPONSE_TYPE.DOCUMENT,
-    'tmx':      Resource.XHR_RESPONSE_TYPE.DOCUMENT,
-    'tsx':      Resource.XHR_RESPONSE_TYPE.DOCUMENT,
-    'svg':      Resource.XHR_RESPONSE_TYPE.DOCUMENT,
+    xhtml:    Resource.XHR_RESPONSE_TYPE.DOCUMENT,
+    html:     Resource.XHR_RESPONSE_TYPE.DOCUMENT,
+    htm:      Resource.XHR_RESPONSE_TYPE.DOCUMENT,
+    xml:      Resource.XHR_RESPONSE_TYPE.DOCUMENT,
+    tmx:      Resource.XHR_RESPONSE_TYPE.DOCUMENT,
+    tsx:      Resource.XHR_RESPONSE_TYPE.DOCUMENT,
+    svg:      Resource.XHR_RESPONSE_TYPE.DOCUMENT,
 
     // images
-    'gif':      Resource.XHR_RESPONSE_TYPE.BLOB,
-    'png':      Resource.XHR_RESPONSE_TYPE.BLOB,
-    'bmp':      Resource.XHR_RESPONSE_TYPE.BLOB,
-    'jpg':      Resource.XHR_RESPONSE_TYPE.BLOB,
-    'jpeg':     Resource.XHR_RESPONSE_TYPE.BLOB,
-    'tif':      Resource.XHR_RESPONSE_TYPE.BLOB,
-    'tiff':     Resource.XHR_RESPONSE_TYPE.BLOB,
-    'webp':     Resource.XHR_RESPONSE_TYPE.BLOB,
-    'tga':      Resource.XHR_RESPONSE_TYPE.BLOB,
+    gif:      Resource.XHR_RESPONSE_TYPE.BLOB,
+    png:      Resource.XHR_RESPONSE_TYPE.BLOB,
+    bmp:      Resource.XHR_RESPONSE_TYPE.BLOB,
+    jpg:      Resource.XHR_RESPONSE_TYPE.BLOB,
+    jpeg:     Resource.XHR_RESPONSE_TYPE.BLOB,
+    tif:      Resource.XHR_RESPONSE_TYPE.BLOB,
+    tiff:     Resource.XHR_RESPONSE_TYPE.BLOB,
+    webp:     Resource.XHR_RESPONSE_TYPE.BLOB,
+    tga:      Resource.XHR_RESPONSE_TYPE.BLOB,
 
     // json
-    'json':     Resource.XHR_RESPONSE_TYPE.JSON,
+    json:     Resource.XHR_RESPONSE_TYPE.JSON,
 
     // text
-    'text':     Resource.XHR_RESPONSE_TYPE.TEXT,
-    'txt':      Resource.XHR_RESPONSE_TYPE.TEXT
+    text:     Resource.XHR_RESPONSE_TYPE.TEXT,
+    txt:      Resource.XHR_RESPONSE_TYPE.TEXT
 };
 
 /**
  * Sets the load type to be used for a specific extension.
  *
  * @static
- * @param extname {string} The extension to set the type for, e.g. "png" or "fnt"
- * @param loadType {Resource.LOAD_TYPE} The load type to set it to.
+ * @param {string} extname - The extension to set the type for, e.g. "png" or "fnt"
+ * @param {Resource.LOAD_TYPE} loadType - The load type to set it to.
  */
 Resource.setExtensionLoadType = function (extname, loadType) {
     setExtMap(Resource._loadTypeMap, extname, loadType);
@@ -28250,8 +26994,8 @@ Resource.setExtensionLoadType = function (extname, loadType) {
  * Sets the load type to be used for a specific extension.
  *
  * @static
- * @param extname {string} The extension to set the type for, e.g. "png" or "fnt"
- * @param xhrType {Resource.XHR_RESPONSE_TYPE} The xhr type to set it to.
+ * @param {string} extname - The extension to set the type for, e.g. "png" or "fnt"
+ * @param {Resource.XHR_RESPONSE_TYPE} xhrType - The xhr type to set it to.
  */
 Resource.setExtensionXhrType = function (extname, xhrType) {
     setExtMap(Resource._xhrTypeMap, extname, xhrType);
@@ -28269,14 +27013,217 @@ function setExtMap(map, extname, val) {
     map[extname] = val;
 }
 
-},{"eventemitter3":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/eventemitter3/index.js","url":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/url/url.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/b64.js":[function(require,module,exports){
-module.exports = {
+},{"eventemitter3":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/node_modules/eventemitter3/index.js","parse-uri":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/parse-uri/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/async.js":[function(require,module,exports){
+'use strict';
 
+/**
+ * Smaller version of the async library constructs.
+ *
+ */
+
+module.exports = {
+    eachSeries: asyncEachSeries,
+    queue: asyncQueue
+};
+
+function _noop() { /* empty */ }
+
+/**
+ * Iterates an array in series.
+ *
+ * @param {*[]} array - Array to iterate.
+ * @param {function} iterator - Function to call for each element.
+ * @param {function} callback - Function to call when done, or on error.
+ */
+function asyncEachSeries(array, iterator, callback) {
+    var i = 0;
+    var len = array.length;
+
+    (function next(err) {
+        if (err || i === len) {
+            if (callback) {
+                callback(err);
+            }
+
+            return;
+        }
+
+        iterator(array[i++], next);
+    })();
+}
+
+/**
+ * Ensures a function is only called once.
+ *
+ * @param {function} fn - The function to wrap.
+ * @return {function} The wrapping function.
+ */
+function onlyOnce(fn) {
+    return function onceWrapper() {
+        if (fn === null) {
+            throw new Error('Callback was already called.');
+        }
+
+        var callFn = fn;
+
+        fn = null;
+        callFn.apply(this, arguments);
+    };
+}
+
+/**
+ * Async queue implementation,
+ *
+ * @param {function} worker - The worker function to call for each task.
+ * @param {number} concurrency - How many workers to run in parrallel.
+ * @return {*} The async queue object.
+ */
+function asyncQueue(worker, concurrency) {
+    if (concurrency == null) { // eslint-disable-line no-eq-null,eqeqeq
+        concurrency = 1;
+    }
+    else if (concurrency === 0) {
+        throw new Error('Concurrency must not be zero');
+    }
+
+    var workers = 0;
+    var q = {
+        _tasks: [],
+        concurrency: concurrency,
+        saturated: _noop,
+        unsaturated: _noop,
+        buffer: concurrency / 4,
+        empty: _noop,
+        drain: _noop,
+        error: _noop,
+        started: false,
+        paused: false,
+        push: function (data, callback) {
+            _insert(data, false, callback);
+        },
+        kill: function () {
+            q.drain = _noop;
+            q._tasks = [];
+        },
+        unshift: function (data, callback) {
+            _insert(data, true, callback);
+        },
+        process: function () {
+            while (!q.paused && workers < q.concurrency && q._tasks.length) {
+                var task = q._tasks.shift();
+
+                if (q._tasks.length === 0) {
+                    q.empty();
+                }
+
+                workers += 1;
+
+                if (workers === q.concurrency) {
+                    q.saturated();
+                }
+
+                worker(task.data, onlyOnce(_next(task)));
+            }
+        },
+        length: function () {
+            return q._tasks.length;
+        },
+        running: function () {
+            return workers;
+        },
+        idle: function () {
+            return q._tasks.length + workers === 0;
+        },
+        pause: function () {
+            if (q.paused === true) {
+                return;
+            }
+
+            q.paused = true;
+        },
+        resume: function () {
+            if (q.paused === false) {
+                return;
+            }
+
+            q.paused = false;
+
+            // Need to call q.process once per concurrent
+            // worker to preserve full concurrency after pause
+            for (var w = 1; w <= q.concurrency; w++) {
+                q.process();
+            }
+        }
+    };
+
+    function _insert(data, insertAtFront, callback) {
+        if (callback != null && typeof callback !== 'function') { // eslint-disable-line no-eq-null,eqeqeq
+            throw new Error('task callback must be a function');
+        }
+
+        q.started = true;
+
+        if (data == null && q.idle()) { // eslint-disable-line no-eq-null,eqeqeq
+            // call drain immediately if there are no tasks
+            setTimeout(function () {
+                q.drain();
+            }, 1);
+
+            return;
+        }
+
+        var item = {
+            data: data,
+            callback: typeof callback === 'function' ? callback : _noop
+        };
+
+        if (insertAtFront) {
+            q._tasks.unshift(item);
+        }
+        else {
+            q._tasks.push(item);
+        }
+
+        setTimeout(function () {
+            q.process();
+        }, 1);
+    }
+
+    function _next(task) {
+        return function () {
+            workers -= 1;
+
+            task.callback.apply(task, arguments);
+
+            if (arguments[0] != null) { // eslint-disable-line no-eq-null,eqeqeq
+                q.error(arguments[0], task.data);
+            }
+
+            if (workers <= (q.concurrency - q.buffer)) {
+                q.unsaturated();
+            }
+
+            if (q.idle()) {
+                q.drain();
+            }
+
+            q.process();
+        };
+    }
+
+    return q;
+}
+
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js":[function(require,module,exports){
+/* eslint no-magic-numbers: 0 */
+'use strict';
+
+module.exports = {
     // private property
-    _keyStr: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",
+    _keyStr: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=',
 
     encodeBinary: function (input) {
-        var output = "";
+        var output = '';
         var bytebuffer;
         var encodedCharIndexes = new Array(4);
         var inx = 0;
@@ -28286,6 +27233,7 @@ module.exports = {
         while (inx < input.length) {
             // Fill byte buffer array
             bytebuffer = new Array(3);
+
             for (jnx = 0; jnx < bytebuffer.length; jnx++) {
                 if (inx < input.length) {
                     // throw away high-order byte, as documented at:
@@ -28331,15 +27279,17 @@ module.exports = {
                 output += this._keyStr.charAt(encodedCharIndexes[jnx]);
             }
         }
+
         return output;
     }
 };
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/index.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/index.js":[function(require,module,exports){
+/* eslint global-require: 0 */
+'use strict';
+
 module.exports = require('./Loader');
-
 module.exports.Resource = require('./Resource');
-
 module.exports.middleware = {
     caching: {
         memory: require('./middlewares/caching/memory')
@@ -28349,7 +27299,11 @@ module.exports.middleware = {
     }
 };
 
-},{"./Loader":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/Loader.js","./Resource":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/Resource.js","./middlewares/caching/memory":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/middlewares/caching/memory.js","./middlewares/parsing/blob":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/middlewares/parsing/blob.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/middlewares/caching/memory.js":[function(require,module,exports){
+module.exports.async = require('./async');
+
+},{"./Loader":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Loader.js","./Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","./async":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/async.js","./middlewares/caching/memory":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/middlewares/caching/memory.js","./middlewares/parsing/blob":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/middlewares/parsing/blob.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/middlewares/caching/memory.js":[function(require,module,exports){
+'use strict';
+
 // a simple in-memory cache for resources
 var cache = {};
 
@@ -28358,22 +27312,24 @@ module.exports = function () {
         // if cached, then set data and complete the resource
         if (cache[resource.url]) {
             resource.data = cache[resource.url];
-            resource.complete();
+            resource.complete(); // marks resource load complete and stops processing before middlewares
         }
         // if not cached, wait for complete and store it in the cache.
         else {
             resource.once('complete', function () {
-               cache[this.url] = this.data;
+                cache[this.url] = this.data;
             });
         }
-        
+
         next();
     };
 };
 
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/middlewares/parsing/blob.js":[function(require,module,exports){
-var Resource = require('../../Resource'),
-    b64 = require('../../b64');
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/middlewares/parsing/blob.js":[function(require,module,exports){
+'use strict';
+
+var Resource = require('../../Resource');
+var b64 = require('../../b64');
 
 var Url = window.URL || window.webkitURL;
 
@@ -28382,7 +27338,9 @@ var Url = window.URL || window.webkitURL;
 module.exports = function () {
     return function (resource, next) {
         if (!resource.data) {
-            return next();
+            next();
+
+            return;
         }
 
         // if this was an XHR load of a blob
@@ -28404,6 +27362,9 @@ module.exports = function () {
 
                         next();
                     };
+
+                    // next will be called on load
+                    return;
                 }
             }
             // if content type says this is an image, then we should transform the blob into an Image object
@@ -28423,770 +27384,156 @@ module.exports = function () {
 
                     next();
                 };
+
+                // next will be called on load.
+                return;
             }
         }
-        else {
-            next();
-        }
+
+        next();
     };
 };
 
-},{"../../Resource":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/Resource.js","../../b64":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/resource-loader/src/b64.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/url/url.js":[function(require,module,exports){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
+},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Controls.js":[function(require,module,exports){
 'use strict';
 
-var punycode = require('punycode');
-var util = require('./util');
-
-exports.parse = urlParse;
-exports.resolve = urlResolve;
-exports.resolveObject = urlResolveObject;
-exports.format = urlFormat;
-
-exports.Url = Url;
-
-function Url() {
-  this.protocol = null;
-  this.slashes = null;
-  this.auth = null;
-  this.host = null;
-  this.port = null;
-  this.hostname = null;
-  this.hash = null;
-  this.search = null;
-  this.query = null;
-  this.pathname = null;
-  this.path = null;
-  this.href = null;
-}
-
-// Reference: RFC 3986, RFC 1808, RFC 2396
-
-// define these here so at least they only have to be
-// compiled once on the first module load.
-var protocolPattern = /^([a-z0-9.+-]+:)/i,
-    portPattern = /:[0-9]*$/,
-
-    // Special case for a simple path URL
-    simplePathPattern = /^(\/\/?(?!\/)[^\?\s]*)(\?[^\s]*)?$/,
-
-    // RFC 2396: characters reserved for delimiting URLs.
-    // We actually just auto-escape these.
-    delims = ['<', '>', '"', '`', ' ', '\r', '\n', '\t'],
-
-    // RFC 2396: characters not allowed for various reasons.
-    unwise = ['{', '}', '|', '\\', '^', '`'].concat(delims),
-
-    // Allowed by RFCs, but cause of XSS attacks.  Always escape these.
-    autoEscape = ['\''].concat(unwise),
-    // Characters that are never ever allowed in a hostname.
-    // Note that any invalid chars are also handled, but these
-    // are the ones that are *expected* to be seen, so we fast-path
-    // them.
-    nonHostChars = ['%', '/', '?', ';', '#'].concat(autoEscape),
-    hostEndingChars = ['/', '?', '#'],
-    hostnameMaxLen = 255,
-    hostnamePartPattern = /^[+a-z0-9A-Z_-]{0,63}$/,
-    hostnamePartStart = /^([+a-z0-9A-Z_-]{0,63})(.*)$/,
-    // protocols that can allow "unsafe" and "unwise" chars.
-    unsafeProtocol = {
-      'javascript': true,
-      'javascript:': true
-    },
-    // protocols that never have a hostname.
-    hostlessProtocol = {
-      'javascript': true,
-      'javascript:': true
-    },
-    // protocols that always contain a // bit.
-    slashedProtocol = {
-      'http': true,
-      'https': true,
-      'ftp': true,
-      'gopher': true,
-      'file': true,
-      'http:': true,
-      'https:': true,
-      'ftp:': true,
-      'gopher:': true,
-      'file:': true
-    },
-    querystring = require('querystring');
-
-function urlParse(url, parseQueryString, slashesDenoteHost) {
-  if (url && util.isObject(url) && url instanceof Url) return url;
-
-  var u = new Url;
-  u.parse(url, parseQueryString, slashesDenoteHost);
-  return u;
-}
-
-Url.prototype.parse = function(url, parseQueryString, slashesDenoteHost) {
-  if (!util.isString(url)) {
-    throw new TypeError("Parameter 'url' must be a string, not " + typeof url);
-  }
-
-  // Copy chrome, IE, opera backslash-handling behavior.
-  // Back slashes before the query string get converted to forward slashes
-  // See: https://code.google.com/p/chromium/issues/detail?id=25916
-  var queryIndex = url.indexOf('?'),
-      splitter =
-          (queryIndex !== -1 && queryIndex < url.indexOf('#')) ? '?' : '#',
-      uSplit = url.split(splitter),
-      slashRegex = /\\/g;
-  uSplit[0] = uSplit[0].replace(slashRegex, '/');
-  url = uSplit.join(splitter);
-
-  var rest = url;
-
-  // trim before proceeding.
-  // This is to support parse stuff like "  http://foo.com  \n"
-  rest = rest.trim();
-
-  if (!slashesDenoteHost && url.split('#').length === 1) {
-    // Try fast path regexp
-    var simplePath = simplePathPattern.exec(rest);
-    if (simplePath) {
-      this.path = rest;
-      this.href = rest;
-      this.pathname = simplePath[1];
-      if (simplePath[2]) {
-        this.search = simplePath[2];
-        if (parseQueryString) {
-          this.query = querystring.parse(this.search.substr(1));
-        } else {
-          this.query = this.search.substr(1);
-        }
-      } else if (parseQueryString) {
-        this.search = '';
-        this.query = {};
-      }
-      return this;
-    }
-  }
-
-  var proto = protocolPattern.exec(rest);
-  if (proto) {
-    proto = proto[0];
-    var lowerProto = proto.toLowerCase();
-    this.protocol = lowerProto;
-    rest = rest.substr(proto.length);
-  }
-
-  // figure out if it's got a host
-  // user@server is *always* interpreted as a hostname, and url
-  // resolution will treat //foo/bar as host=foo,path=bar because that's
-  // how the browser resolves relative URLs.
-  if (slashesDenoteHost || proto || rest.match(/^\/\/[^@\/]+@[^@\/]+/)) {
-    var slashes = rest.substr(0, 2) === '//';
-    if (slashes && !(proto && hostlessProtocol[proto])) {
-      rest = rest.substr(2);
-      this.slashes = true;
-    }
-  }
-
-  if (!hostlessProtocol[proto] &&
-      (slashes || (proto && !slashedProtocol[proto]))) {
-
-    // there's a hostname.
-    // the first instance of /, ?, ;, or # ends the host.
-    //
-    // If there is an @ in the hostname, then non-host chars *are* allowed
-    // to the left of the last @ sign, unless some host-ending character
-    // comes *before* the @-sign.
-    // URLs are obnoxious.
-    //
-    // ex:
-    // http://a@b@c/ => user:a@b host:c
-    // http://a@b?@c => user:a host:c path:/?@c
-
-    // v0.12 TODO(isaacs): This is not quite how Chrome does things.
-    // Review our test case against browsers more comprehensively.
-
-    // find the first instance of any hostEndingChars
-    var hostEnd = -1;
-    for (var i = 0; i < hostEndingChars.length; i++) {
-      var hec = rest.indexOf(hostEndingChars[i]);
-      if (hec !== -1 && (hostEnd === -1 || hec < hostEnd))
-        hostEnd = hec;
-    }
-
-    // at this point, either we have an explicit point where the
-    // auth portion cannot go past, or the last @ char is the decider.
-    var auth, atSign;
-    if (hostEnd === -1) {
-      // atSign can be anywhere.
-      atSign = rest.lastIndexOf('@');
-    } else {
-      // atSign must be in auth portion.
-      // http://a@b/c@d => host:b auth:a path:/c@d
-      atSign = rest.lastIndexOf('@', hostEnd);
-    }
-
-    // Now we have a portion which is definitely the auth.
-    // Pull that off.
-    if (atSign !== -1) {
-      auth = rest.slice(0, atSign);
-      rest = rest.slice(atSign + 1);
-      this.auth = decodeURIComponent(auth);
-    }
-
-    // the host is the remaining to the left of the first non-host char
-    hostEnd = -1;
-    for (var i = 0; i < nonHostChars.length; i++) {
-      var hec = rest.indexOf(nonHostChars[i]);
-      if (hec !== -1 && (hostEnd === -1 || hec < hostEnd))
-        hostEnd = hec;
-    }
-    // if we still have not hit it, then the entire thing is a host.
-    if (hostEnd === -1)
-      hostEnd = rest.length;
-
-    this.host = rest.slice(0, hostEnd);
-    rest = rest.slice(hostEnd);
-
-    // pull out port.
-    this.parseHost();
-
-    // we've indicated that there is a hostname,
-    // so even if it's empty, it has to be present.
-    this.hostname = this.hostname || '';
-
-    // if hostname begins with [ and ends with ]
-    // assume that it's an IPv6 address.
-    var ipv6Hostname = this.hostname[0] === '[' &&
-        this.hostname[this.hostname.length - 1] === ']';
-
-    // validate a little.
-    if (!ipv6Hostname) {
-      var hostparts = this.hostname.split(/\./);
-      for (var i = 0, l = hostparts.length; i < l; i++) {
-        var part = hostparts[i];
-        if (!part) continue;
-        if (!part.match(hostnamePartPattern)) {
-          var newpart = '';
-          for (var j = 0, k = part.length; j < k; j++) {
-            if (part.charCodeAt(j) > 127) {
-              // we replace non-ASCII char with a temporary placeholder
-              // we need this to make sure size of hostname is not
-              // broken by replacing non-ASCII by nothing
-              newpart += 'x';
-            } else {
-              newpart += part[j];
-            }
-          }
-          // we test again with ASCII char only
-          if (!newpart.match(hostnamePartPattern)) {
-            var validParts = hostparts.slice(0, i);
-            var notHost = hostparts.slice(i + 1);
-            var bit = part.match(hostnamePartStart);
-            if (bit) {
-              validParts.push(bit[1]);
-              notHost.unshift(bit[2]);
-            }
-            if (notHost.length) {
-              rest = '/' + notHost.join('.') + rest;
-            }
-            this.hostname = validParts.join('.');
-            break;
-          }
-        }
-      }
-    }
-
-    if (this.hostname.length > hostnameMaxLen) {
-      this.hostname = '';
-    } else {
-      // hostnames are always lower case.
-      this.hostname = this.hostname.toLowerCase();
-    }
-
-    if (!ipv6Hostname) {
-      // IDNA Support: Returns a punycoded representation of "domain".
-      // It only converts parts of the domain name that
-      // have non-ASCII characters, i.e. it doesn't matter if
-      // you call it with a domain that already is ASCII-only.
-      this.hostname = punycode.toASCII(this.hostname);
-    }
-
-    var p = this.port ? ':' + this.port : '';
-    var h = this.hostname || '';
-    this.host = h + p;
-    this.href += this.host;
-
-    // strip [ and ] from the hostname
-    // the host field still retains them, though
-    if (ipv6Hostname) {
-      this.hostname = this.hostname.substr(1, this.hostname.length - 2);
-      if (rest[0] !== '/') {
-        rest = '/' + rest;
-      }
-    }
-  }
-
-  // now rest is set to the post-host stuff.
-  // chop off any delim chars.
-  if (!unsafeProtocol[lowerProto]) {
-
-    // First, make 100% sure that any "autoEscape" chars get
-    // escaped, even if encodeURIComponent doesn't think they
-    // need to be.
-    for (var i = 0, l = autoEscape.length; i < l; i++) {
-      var ae = autoEscape[i];
-      if (rest.indexOf(ae) === -1)
-        continue;
-      var esc = encodeURIComponent(ae);
-      if (esc === ae) {
-        esc = escape(ae);
-      }
-      rest = rest.split(ae).join(esc);
-    }
-  }
-
-
-  // chop off from the tail first.
-  var hash = rest.indexOf('#');
-  if (hash !== -1) {
-    // got a fragment string.
-    this.hash = rest.substr(hash);
-    rest = rest.slice(0, hash);
-  }
-  var qm = rest.indexOf('?');
-  if (qm !== -1) {
-    this.search = rest.substr(qm);
-    this.query = rest.substr(qm + 1);
-    if (parseQueryString) {
-      this.query = querystring.parse(this.query);
-    }
-    rest = rest.slice(0, qm);
-  } else if (parseQueryString) {
-    // no query string, but parseQueryString still requested
-    this.search = '';
-    this.query = {};
-  }
-  if (rest) this.pathname = rest;
-  if (slashedProtocol[lowerProto] &&
-      this.hostname && !this.pathname) {
-    this.pathname = '/';
-  }
-
-  //to support http.request
-  if (this.pathname || this.search) {
-    var p = this.pathname || '';
-    var s = this.search || '';
-    this.path = p + s;
-  }
-
-  // finally, reconstruct the href based on what has been validated.
-  this.href = this.format();
-  return this;
-};
-
-// format a parsed object into a url string
-function urlFormat(obj) {
-  // ensure it's an object, and not a string url.
-  // If it's an obj, this is a no-op.
-  // this way, you can call url_format() on strings
-  // to clean up potentially wonky urls.
-  if (util.isString(obj)) obj = urlParse(obj);
-  if (!(obj instanceof Url)) return Url.prototype.format.call(obj);
-  return obj.format();
-}
-
-Url.prototype.format = function() {
-  var auth = this.auth || '';
-  if (auth) {
-    auth = encodeURIComponent(auth);
-    auth = auth.replace(/%3A/i, ':');
-    auth += '@';
-  }
-
-  var protocol = this.protocol || '',
-      pathname = this.pathname || '',
-      hash = this.hash || '',
-      host = false,
-      query = '';
-
-  if (this.host) {
-    host = auth + this.host;
-  } else if (this.hostname) {
-    host = auth + (this.hostname.indexOf(':') === -1 ?
-        this.hostname :
-        '[' + this.hostname + ']');
-    if (this.port) {
-      host += ':' + this.port;
-    }
-  }
-
-  if (this.query &&
-      util.isObject(this.query) &&
-      Object.keys(this.query).length) {
-    query = querystring.stringify(this.query);
-  }
-
-  var search = this.search || (query && ('?' + query)) || '';
-
-  if (protocol && protocol.substr(-1) !== ':') protocol += ':';
-
-  // only the slashedProtocols get the //.  Not mailto:, xmpp:, etc.
-  // unless they had them to begin with.
-  if (this.slashes ||
-      (!protocol || slashedProtocol[protocol]) && host !== false) {
-    host = '//' + (host || '');
-    if (pathname && pathname.charAt(0) !== '/') pathname = '/' + pathname;
-  } else if (!host) {
-    host = '';
-  }
-
-  if (hash && hash.charAt(0) !== '#') hash = '#' + hash;
-  if (search && search.charAt(0) !== '?') search = '?' + search;
-
-  pathname = pathname.replace(/[?#]/g, function(match) {
-    return encodeURIComponent(match);
-  });
-  search = search.replace('#', '%23');
-
-  return protocol + host + pathname + search + hash;
-};
-
-function urlResolve(source, relative) {
-  return urlParse(source, false, true).resolve(relative);
-}
-
-Url.prototype.resolve = function(relative) {
-  return this.resolveObject(urlParse(relative, false, true)).format();
-};
-
-function urlResolveObject(source, relative) {
-  if (!source) return relative;
-  return urlParse(source, false, true).resolveObject(relative);
-}
-
-Url.prototype.resolveObject = function(relative) {
-  if (util.isString(relative)) {
-    var rel = new Url();
-    rel.parse(relative, false, true);
-    relative = rel;
-  }
-
-  var result = new Url();
-  var tkeys = Object.keys(this);
-  for (var tk = 0; tk < tkeys.length; tk++) {
-    var tkey = tkeys[tk];
-    result[tkey] = this[tkey];
-  }
-
-  // hash is always overridden, no matter what.
-  // even href="" will remove it.
-  result.hash = relative.hash;
-
-  // if the relative url is empty, then there's nothing left to do here.
-  if (relative.href === '') {
-    result.href = result.format();
-    return result;
-  }
-
-  // hrefs like //foo/bar always cut to the protocol.
-  if (relative.slashes && !relative.protocol) {
-    // take everything except the protocol from relative
-    var rkeys = Object.keys(relative);
-    for (var rk = 0; rk < rkeys.length; rk++) {
-      var rkey = rkeys[rk];
-      if (rkey !== 'protocol')
-        result[rkey] = relative[rkey];
-    }
-
-    //urlParse appends trailing / to urls like http://www.example.com
-    if (slashedProtocol[result.protocol] &&
-        result.hostname && !result.pathname) {
-      result.path = result.pathname = '/';
-    }
-
-    result.href = result.format();
-    return result;
-  }
-
-  if (relative.protocol && relative.protocol !== result.protocol) {
-    // if it's a known url protocol, then changing
-    // the protocol does weird things
-    // first, if it's not file:, then we MUST have a host,
-    // and if there was a path
-    // to begin with, then we MUST have a path.
-    // if it is file:, then the host is dropped,
-    // because that's known to be hostless.
-    // anything else is assumed to be absolute.
-    if (!slashedProtocol[relative.protocol]) {
-      var keys = Object.keys(relative);
-      for (var v = 0; v < keys.length; v++) {
-        var k = keys[v];
-        result[k] = relative[k];
-      }
-      result.href = result.format();
-      return result;
-    }
-
-    result.protocol = relative.protocol;
-    if (!relative.host && !hostlessProtocol[relative.protocol]) {
-      var relPath = (relative.pathname || '').split('/');
-      while (relPath.length && !(relative.host = relPath.shift()));
-      if (!relative.host) relative.host = '';
-      if (!relative.hostname) relative.hostname = '';
-      if (relPath[0] !== '') relPath.unshift('');
-      if (relPath.length < 2) relPath.unshift('');
-      result.pathname = relPath.join('/');
-    } else {
-      result.pathname = relative.pathname;
-    }
-    result.search = relative.search;
-    result.query = relative.query;
-    result.host = relative.host || '';
-    result.auth = relative.auth;
-    result.hostname = relative.hostname || relative.host;
-    result.port = relative.port;
-    // to support http.request
-    if (result.pathname || result.search) {
-      var p = result.pathname || '';
-      var s = result.search || '';
-      result.path = p + s;
-    }
-    result.slashes = result.slashes || relative.slashes;
-    result.href = result.format();
-    return result;
-  }
-
-  var isSourceAbs = (result.pathname && result.pathname.charAt(0) === '/'),
-      isRelAbs = (
-          relative.host ||
-          relative.pathname && relative.pathname.charAt(0) === '/'
-      ),
-      mustEndAbs = (isRelAbs || isSourceAbs ||
-                    (result.host && relative.pathname)),
-      removeAllDots = mustEndAbs,
-      srcPath = result.pathname && result.pathname.split('/') || [],
-      relPath = relative.pathname && relative.pathname.split('/') || [],
-      psychotic = result.protocol && !slashedProtocol[result.protocol];
-
-  // if the url is a non-slashed url, then relative
-  // links like ../.. should be able
-  // to crawl up to the hostname, as well.  This is strange.
-  // result.protocol has already been set by now.
-  // Later on, put the first path part into the host field.
-  if (psychotic) {
-    result.hostname = '';
-    result.port = null;
-    if (result.host) {
-      if (srcPath[0] === '') srcPath[0] = result.host;
-      else srcPath.unshift(result.host);
-    }
-    result.host = '';
-    if (relative.protocol) {
-      relative.hostname = null;
-      relative.port = null;
-      if (relative.host) {
-        if (relPath[0] === '') relPath[0] = relative.host;
-        else relPath.unshift(relative.host);
-      }
-      relative.host = null;
-    }
-    mustEndAbs = mustEndAbs && (relPath[0] === '' || srcPath[0] === '');
-  }
-
-  if (isRelAbs) {
-    // it's absolute.
-    result.host = (relative.host || relative.host === '') ?
-                  relative.host : result.host;
-    result.hostname = (relative.hostname || relative.hostname === '') ?
-                      relative.hostname : result.hostname;
-    result.search = relative.search;
-    result.query = relative.query;
-    srcPath = relPath;
-    // fall through to the dot-handling below.
-  } else if (relPath.length) {
-    // it's relative
-    // throw away the existing file, and take the new path instead.
-    if (!srcPath) srcPath = [];
-    srcPath.pop();
-    srcPath = srcPath.concat(relPath);
-    result.search = relative.search;
-    result.query = relative.query;
-  } else if (!util.isNullOrUndefined(relative.search)) {
-    // just pull out the search.
-    // like href='?foo'.
-    // Put this after the other two cases because it simplifies the booleans
-    if (psychotic) {
-      result.hostname = result.host = srcPath.shift();
-      //occationaly the auth can get stuck only in host
-      //this especially happens in cases like
-      //url.resolveObject('mailto:local1@domain1', 'local2@domain2')
-      var authInHost = result.host && result.host.indexOf('@') > 0 ?
-                       result.host.split('@') : false;
-      if (authInHost) {
-        result.auth = authInHost.shift();
-        result.host = result.hostname = authInHost.shift();
-      }
-    }
-    result.search = relative.search;
-    result.query = relative.query;
-    //to support http.request
-    if (!util.isNull(result.pathname) || !util.isNull(result.search)) {
-      result.path = (result.pathname ? result.pathname : '') +
-                    (result.search ? result.search : '');
-    }
-    result.href = result.format();
-    return result;
-  }
-
-  if (!srcPath.length) {
-    // no path at all.  easy.
-    // we've already handled the other stuff above.
-    result.pathname = null;
-    //to support http.request
-    if (result.search) {
-      result.path = '/' + result.search;
-    } else {
-      result.path = null;
-    }
-    result.href = result.format();
-    return result;
-  }
-
-  // if a url ENDs in . or .., then it must get a trailing slash.
-  // however, if it ends in anything else non-slashy,
-  // then it must NOT get a trailing slash.
-  var last = srcPath.slice(-1)[0];
-  var hasTrailingSlash = (
-      (result.host || relative.host || srcPath.length > 1) &&
-      (last === '.' || last === '..') || last === '');
-
-  // strip single dots, resolve double dots to parent dir
-  // if the path tries to go above the root, `up` ends up > 0
-  var up = 0;
-  for (var i = srcPath.length; i >= 0; i--) {
-    last = srcPath[i];
-    if (last === '.') {
-      srcPath.splice(i, 1);
-    } else if (last === '..') {
-      srcPath.splice(i, 1);
-      up++;
-    } else if (up) {
-      srcPath.splice(i, 1);
-      up--;
-    }
-  }
-
-  // if the path is allowed to go above the root, restore leading ..s
-  if (!mustEndAbs && !removeAllDots) {
-    for (; up--; up) {
-      srcPath.unshift('..');
-    }
-  }
-
-  if (mustEndAbs && srcPath[0] !== '' &&
-      (!srcPath[0] || srcPath[0].charAt(0) !== '/')) {
-    srcPath.unshift('');
-  }
-
-  if (hasTrailingSlash && (srcPath.join('/').substr(-1) !== '/')) {
-    srcPath.push('');
-  }
-
-  var isAbsolute = srcPath[0] === '' ||
-      (srcPath[0] && srcPath[0].charAt(0) === '/');
-
-  // put the host back
-  if (psychotic) {
-    result.hostname = result.host = isAbsolute ? '' :
-                                    srcPath.length ? srcPath.shift() : '';
-    //occationaly the auth can get stuck only in host
-    //this especially happens in cases like
-    //url.resolveObject('mailto:local1@domain1', 'local2@domain2')
-    var authInHost = result.host && result.host.indexOf('@') > 0 ?
-                     result.host.split('@') : false;
-    if (authInHost) {
-      result.auth = authInHost.shift();
-      result.host = result.hostname = authInHost.shift();
-    }
-  }
-
-  mustEndAbs = mustEndAbs || (result.host && srcPath.length);
-
-  if (mustEndAbs && !isAbsolute) {
-    srcPath.unshift('');
-  }
-
-  if (!srcPath.length) {
-    result.pathname = null;
-    result.path = null;
-  } else {
-    result.pathname = srcPath.join('/');
-  }
-
-  //to support request.http
-  if (!util.isNull(result.pathname) || !util.isNull(result.search)) {
-    result.path = (result.pathname ? result.pathname : '') +
-                  (result.search ? result.search : '');
-  }
-  result.auth = relative.auth || result.auth;
-  result.slashes = result.slashes || relative.slashes;
-  result.href = result.format();
-  return result;
-};
-
-Url.prototype.parseHost = function() {
-  var host = this.host;
-  var port = portPattern.exec(host);
-  if (port) {
-    port = port[0];
-    if (port !== ':') {
-      this.port = port.substr(1);
-    }
-    host = host.substr(0, host.length - port.length);
-  }
-  if (host) this.hostname = host;
-};
-
-},{"./util":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/url/util.js","punycode":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/punycode/punycode.js","querystring":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/querystring-es3/index.js"}],"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/url/util.js":[function(require,module,exports){
-'use strict';
-
-module.exports = {
-  isString: function(arg) {
-    return typeof(arg) === 'string';
-  },
-  isObject: function(arg) {
-    return typeof(arg) === 'object' && arg !== null;
-  },
-  isNull: function(arg) {
-    return arg === null;
-  },
-  isNullOrUndefined: function(arg) {
-    return arg == null;
-  }
-};
-
-},{}],"/home/tobi/Projects/Coding/Web/pixi-particles/src/js/main.js":[function(require,module,exports){
-"use strict";
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var Controls = function () {
+  function Controls() {
+    _classCallCheck(this, Controls);
+
+    this.left = this.keyboard(37);
+    this.up = this.keyboard(38);
+    this.right = this.keyboard(39);
+    this.down = this.keyboard(40);
+    this.fire = this.keyboard(32);
+  }
+
+  _createClass(Controls, [{
+    key: 'getKeyDownObservable',
+    value: function getKeyDownObservable() {
+      var _this = this;
+
+      return Rx.Observable.create(function (observer) {
+        _this.left.press = function () {
+          return observer.onNext('left');
+        };
+        _this.right.press = function () {
+          return observer.onNext('right');
+        };
+        _this.up.press = function () {
+          return observer.onNext('up');
+        };
+        _this.down.press = function () {
+          return observer.onNext('down');
+        };
+      });
+    }
+  }, {
+    key: 'getKeyUpObservable',
+    value: function getKeyUpObservable() {
+      var _this2 = this;
+
+      return Rx.Observable.create(function (observer) {
+        _this2.left.release = function () {
+          return observer.onNext('left');
+        };
+        _this2.right.release = function () {
+          return observer.onNext('right');
+        };
+        _this2.up.release = function () {
+          return observer.onNext('up');
+        };
+        _this2.down.release = function () {
+          return observer.onNext('down');
+        };
+      });
+    }
+  }, {
+    key: 'getFireObservable',
+    value: function getFireObservable() {
+      var _this3 = this;
+
+      return Rx.Observable.create(function (observer) {
+        _this3.fire.press = function () {
+          return observer.onNext('fire-down');
+        };
+        _this3.fire.release = function () {
+          return observer.onNext('fire-up');
+        };
+      });
+    }
+  }, {
+    key: 'keyboard',
+    value: function keyboard(keyCode) {
+      var key = {};
+      key.code = keyCode;
+      key.isDown = false;
+      key.isUp = true;
+      key.press = undefined;
+      key.release = undefined;
+      //The `downHandler`
+      key.downHandler = function (event) {
+        if (event.keyCode === key.code) {
+          if (key.isUp && key.press) key.press();
+          key.isDown = true;
+          key.isUp = false;
+        }
+        event.preventDefault();
+      };
+
+      //The `upHandler`
+      key.upHandler = function (event) {
+        if (event.keyCode === key.code) {
+          if (key.isDown && key.release) key.release();
+          key.isDown = false;
+          key.isUp = true;
+        }
+        event.preventDefault();
+      };
+
+      //Attach event listeners
+      window.addEventListener("keydown", key.downHandler.bind(key), false);
+      window.addEventListener("keyup", key.upHandler.bind(key), false);
+      return key;
+    }
+  }]);
+
+  return Controls;
+}();
+
+exports.default = Controls;
+
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Keys.js":[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var Keys = function Keys() {
+  _classCallCheck(this, Keys);
+
+  this.UP_PRESSED = 0x200;
+};
+
+exports.default = Keys;
+
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js":[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
 
 var _pixi = require("pixi.js");
 
@@ -29196,68 +27543,184 @@ function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj;
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-document.addEventListener("DOMContentLoaded", function () {
-	// Create a game class and start its animation
-	var game = new Game();
-	game.animate();
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
 
-	// Expose the game instance to global scope (optional)
-	window.game = game;
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var MyCicle = function (_PIXI$Container) {
+  _inherits(MyCicle, _PIXI$Container);
+
+  function MyCicle() {
+    _classCallCheck(this, MyCicle);
+
+    var _this = _possibleConstructorReturn(this, (MyCicle.__proto__ || Object.getPrototypeOf(MyCicle)).call(this));
+
+    var graphics = new PIXI.Graphics();
+    graphics.x = window.innerWidth / 2;
+    graphics.y = window.innerHeight / 2;
+    graphics.beginFill(0xFFFFFF, 1);
+    graphics.drawCircle(100, 100, 100);
+    _this.addChild(graphics);
+    return _this;
+  }
+
+  return MyCicle;
+}(PIXI.Container);
+
+exports.default = MyCicle;
+
+},{"pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MySquare.js":[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _pixi = require("pixi.js");
+
+var PIXI = _interopRequireWildcard(_pixi);
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var MySquare = function (_PIXI$Container) {
+  _inherits(MySquare, _PIXI$Container);
+
+  function MySquare() {
+    _classCallCheck(this, MySquare);
+
+    var _this = _possibleConstructorReturn(this, (MySquare.__proto__ || Object.getPrototypeOf(MySquare)).call(this));
+
+    var graphics = new PIXI.Graphics();
+    graphics.x = window.innerWidth / 2;
+    graphics.y = window.innerHeight / 2;
+    graphics.beginFill(0xFFFFFF, 1);
+    graphics.drawRect(100, 100, 100, 100);
+    _this.addChild(graphics);
+    return _this;
+  }
+
+  return MySquare;
+}(PIXI.Container);
+
+exports.default = MySquare;
+
+},{"pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js":[function(require,module,exports){
+"use strict";
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _pixi = require("pixi.js");
+
+var PIXI = _interopRequireWildcard(_pixi);
+
+var _MyCircle = require("./MyCircle");
+
+var _MyCircle2 = _interopRequireDefault(_MyCircle);
+
+var _MySquare = require("./MySquare");
+
+var _MySquare2 = _interopRequireDefault(_MySquare);
+
+var _Controls = require("./Controls");
+
+var _Controls2 = _interopRequireDefault(_Controls);
+
+var _Keys = require("./Keys");
+
+var _Keys2 = _interopRequireDefault(_Keys);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+document.addEventListener("DOMContentLoaded", function () {
+		// Create a game class and start its animation
+		var game = new Game();
+		game.animate();
+
+		// Expose the game instance to global scope (optional)
+		window.game = game;
 });
 
 var Game = function () {
-	function Game() {
-		_classCallCheck(this, Game);
+		function Game() {
+				var _this = this;
 
-		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
-		// if you want to force WebGL
-		this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
-		// Set an ID for some simple css styling
-		this.renderer.view.id = "pixi";
-		document.body.appendChild(this.renderer.view);
+				_classCallCheck(this, Game);
 
-		// Pixelated scaling (optional)
-		PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
+				this.keys = new _Keys2.default();
+				// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
+				// if you want to force WebGL
+				this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
+				// Set an ID for some simple css styling
+				this.renderer.view.id = "pixi";
+				document.body.appendChild(this.renderer.view);
 
-		// Base container
-		this.container = new PIXI.Container();
+				// Pixelated scaling (optional)
+				PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
 
-		// Standard 16x16 image provided with this repo
-		var texture = PIXI.Texture.fromImage("/images/pixi.png");
-		this.pixi = new PIXI.Sprite(texture);
+				this.controls = new _Controls2.default();
 
-		// Set anchor to the middle
-		this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
+				this.controls.getKeyDownObservable().subscribe(function (direction) {
+						return console.log(_this.keys.UP_PRESSED);
+				});
+				this.controls.getKeyUpObservable().subscribe(function (direction) {
+						return console.log(direction);
+				});
+				this.controls.getFireObservable().subscribe(function (fire) {
+						return console.log(fire);
+				});
 
-		// Set position to middle of the screen
-		this.pixi.position.x = window.innerWidth / 2;
-		this.pixi.position.y = window.innerHeight / 2;
+				// Base container
+				this.container = new PIXI.Container();
 
-		// Scale the sprite a little
-		this.pixi.scale.x = this.pixi.scale.y = 5;
+				// Standard 16x16 image provided with this repo
+				var texture = PIXI.Texture.fromImage("/images/pixi.png");
+				this.pixi = new PIXI.Sprite(texture);
+				this.circle = new _MyCircle2.default();
+				this.square = new _MySquare2.default();
+				this.container.addChild(this.square);
 
-		// Add the sprite to the scene
-		this.container.addChild(this.pixi);
-	}
+				// Set anchor to the middle
+				this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
 
-	_createClass(Game, [{
-		key: "animate",
-		value: function animate() {
-			// Rotate it a little each frame
-			this.pixi.rotation += 0.1;
+				// Set position to middle of the screen
+				this.pixi.position.x = window.innerWidth / 2;
+				this.pixi.position.y = window.innerHeight / 2;
 
-			// Render the scene
-			this.renderer.render(this.container);
+				// Scale the sprite a little
+				this.pixi.scale.x = this.pixi.scale.y = 5;
 
-			// Request to render at next browser redraw
-			requestAnimationFrame(this.animate.bind(this));
+				// Add the sprite to the scene
+				this.container.addChild(this.pixi);
 		}
-	}]);
 
-	return Game;
+		_createClass(Game, [{
+				key: "animate",
+				value: function animate() {
+						// Rotate it a little each frame
+						this.pixi.rotation -= 0.1;
+						this.square.position.x += 0.1;
+
+						// Render the scene
+						this.renderer.render(this.container);
+
+						// Request to render at next browser redraw
+						requestAnimationFrame(this.animate.bind(this));
+				}
+		}]);
+
+		return Game;
 }();
 
-},{"pixi.js":"/home/tobi/Projects/Coding/Web/pixi-particles/node_modules/pixi.js/src/index.js"}]},{},["/home/tobi/Projects/Coding/Web/pixi-particles/src/js/main.js"])
-
+},{"./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Controls.js","./Keys":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Keys.js","./MyCircle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js","./MySquare":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MySquare.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
 
 //# sourceMappingURL=main.js.map

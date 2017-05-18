@@ -1,4 +1,8 @@
 import * as PIXI from "pixi.js";
+import MyCircle from "./MyCircle";
+import MySquare from "./MySquare";
+import Controls from "./Controls";
+import Keys from "./Keys";
 
 document.addEventListener("DOMContentLoaded", () => {
 	// Create a game class and start its animation
@@ -11,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 class Game {
 	constructor() {
+    this.keys = new Keys();
 		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
 		// if you want to force WebGL
 		this.renderer = PIXI.autoDetectRenderer(
@@ -24,12 +29,24 @@ class Game {
 		// Pixelated scaling (optional)
 		PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
 
+    this.controls = new Controls();
+
+    this.controls.getKeyDownObservable()
+      .subscribe(direction => console.log(this.keys.UP_PRESSED));
+    this.controls.getKeyUpObservable()
+      .subscribe(direction => console.log(direction));
+    this.controls.getFireObservable()
+      .subscribe(fire => console.log(fire));
+
 		// Base container
 		this.container = new PIXI.Container();
 
 		// Standard 16x16 image provided with this repo
 		let texture = PIXI.Texture.fromImage("/images/pixi.png");
 		this.pixi = new PIXI.Sprite(texture);
+    this.circle = new MyCircle();
+    this.square = new MySquare();
+    this.container.addChild(this.square);
 
 		// Set anchor to the middle
 		this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
@@ -47,7 +64,8 @@ class Game {
 
 	animate() {
 		// Rotate it a little each frame
-		this.pixi.rotation += 0.1;
+		this.pixi.rotation -= 0.1;
+    this.square.position.x += 0.1;
 
 		// Render the scene
 		this.renderer.render(this.container);
