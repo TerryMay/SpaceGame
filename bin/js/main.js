@@ -27576,9 +27576,17 @@ Object.defineProperty(exports, "__esModule", {
   value: true
 });
 
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
 var _pixi = require("pixi.js");
 
 var PIXI = _interopRequireWildcard(_pixi);
+
+var _Vector = require("./lib/Vector");
+
+var _Vector2 = _interopRequireDefault(_Vector);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
 
@@ -27596,22 +27604,179 @@ var MyCicle = function (_PIXI$Container) {
 
     var _this = _possibleConstructorReturn(this, (MyCicle.__proto__ || Object.getPrototypeOf(MyCicle)).call(this));
 
-    var graphics = new PIXI.Graphics();
-    graphics.x = window.innerWidth / 2;
-    graphics.y = window.innerHeight / 2;
-    graphics.beginFill(0xFFFFFF, 1);
-    _this.path = [new PIXI.Point(50, 0), new PIXI.Point(50, 100), new PIXI.Point(0, 50)];
-    graphics.drawPolygon(_this.path);
-    _this.addChild(graphics);
+    _this.vector = new _Vector2.default(0, 0);
+    _this.direction = new _Vector2.default(0, 0);
+    _this.graphics = new PIXI.Graphics();
+    _this.addChild(_this.graphics);
+    _this.update();
     return _this;
   }
+
+  _createClass(MyCicle, [{
+    key: "update",
+    value: function update() {
+      this.x = this.vector.x;
+      this.y = this.vector.y;
+      this.draw();
+    }
+  }, {
+    key: "draw",
+    value: function draw() {
+      this.graphics.x = 0;
+      this.graphics.y = 0;
+      this.graphics.beginFill(0xFFFFFF, 1);
+      this.path = [new PIXI.Point(50, 0), new PIXI.Point(50, 100), new PIXI.Point(0, 50)];
+      this.graphics.drawPolygon(this.path);
+    }
+  }, {
+    key: "addVector",
+    value: function addVector(v2) {
+      this.vector = this.vector.add(v2);
+      this.update();
+    }
+  }, {
+    key: "addDirection",
+    value: function addDirection(v2) {
+      this.direction = this.direction.add(v2);
+      this.update();
+    }
+  }, {
+    key: "getVector",
+    value: function getVector() {
+      return this.vector;
+    }
+  }, {
+    key: "getDirection",
+    value: function getDirection() {
+      return this.direction;
+    }
+  }]);
 
   return MyCicle;
 }(PIXI.Container);
 
 exports.default = MyCicle;
 
-},{"pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js":[function(require,module,exports){
+},{"./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js":[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var Vector = function () {
+  function Vector(x, y) {
+    _classCallCheck(this, Vector);
+
+    this.x = x;
+    this.y = y;
+  }
+
+  _createClass(Vector, [{
+    key: "toString",
+    value: function toString() {
+      return "vector x:" + this.getX() + " y:" + this.getY();
+    }
+  }, {
+    key: "setX",
+    value: function setX(value) {
+      this.x = value;
+    }
+  }, {
+    key: "getX",
+    value: function getX() {
+      return this.x;
+    }
+  }, {
+    key: "setY",
+    value: function setY(value) {
+      this.y = value;
+    }
+  }, {
+    key: "getY",
+    value: function getY() {
+      return this.y;
+    }
+  }, {
+    key: "setAngle",
+    value: function setAngle(angle) {
+      var length = this.getLength();
+      this.x = Math.cos(angle) * length;
+      this.y = Math.sin(angle) * length;
+    }
+  }, {
+    key: "getAngle",
+    value: function getAngle() {
+      return Math.atan2(this._y, this._x);
+    }
+  }, {
+    key: "setLength",
+    value: function setLength(length) {
+      var angle = this.getAngle();
+      this.x = Math.cos(angle) * length;
+      this.y = MAth.sin(angle) * length;
+    }
+  }, {
+    key: "getLength",
+    value: function getLength() {
+      return Math.sqrt(this.x * this.x + this.y * this.y);
+    }
+  }, {
+    key: "add",
+    value: function add(v2) {
+      return new Vector(this.x + v2.getX(), this.y + v2.getY());
+    }
+  }, {
+    key: "subtract",
+    value: function subtract(v2) {
+      return new Vector(this.x - v2.getX(), this.y - v2.getY());
+    }
+  }, {
+    key: "multiply",
+    value: function multiply(val) {
+      return new Vector(this.x * val, this.y * val);
+    }
+  }, {
+    key: "divide",
+    value: function divide(val) {
+      return new Vector(this.x / val, this.y / val);
+    }
+  }, {
+    key: "addTo",
+    value: function addTo(v2) {
+      this.x += v2.getX();
+      this.y += v2.getY();
+    }
+  }, {
+    key: "subtractFrom",
+    value: function subtractFrom(v2) {
+      this.x -= v2.getX();
+      this.y -= v2.getY();
+    }
+  }, {
+    key: "multiplyBy",
+    value: function multiplyBy(val) {
+      this.x += val;
+      this.y += val;
+    }
+  }, {
+    key: "divideBy",
+    value: function divideBy(val) {
+      this.x /= val;
+      this.y /= val;
+    }
+  }]);
+
+  return Vector;
+}();
+
+exports.default = Vector;
+
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js":[function(require,module,exports){
 "use strict";
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
@@ -27636,6 +27801,10 @@ var _Keys = require("./Keys");
 
 var _Keys2 = _interopRequireDefault(_Keys);
 
+var _Vector = require("./lib/Vector");
+
+var _Vector2 = _interopRequireDefault(_Vector);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
@@ -27643,84 +27812,94 @@ function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj;
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 document.addEventListener("DOMContentLoaded", function () {
-	// Create a game class and start its animation
-	var game = new Game();
-	game.animate();
+		// Create a game class and start its animation
+		var game = new Game();
+		game.animate();
 
-	// Expose the game instance to global scope (optional)
-	window.game = game;
+		// Expose the game instance to global scope (optional)
+		window.game = game;
 });
 
 var Game = function () {
-	function Game() {
-		var _this = this;
+		function Game() {
+				var _this = this;
 
-		_classCallCheck(this, Game);
+				_classCallCheck(this, Game);
 
-		this.keys = new _Keys2.default();
-		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
-		// if you want to force WebGL
-		this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
-		// Set an ID for some simple css styling
-		this.renderer.view.id = "pixi";
-		document.body.appendChild(this.renderer.view);
+				var vectorDispatch = {
+						"up": new _Vector2.default(0, -1),
+						"down": new _Vector2.default(0, 1),
+						"left": new _Vector2.default(-1, 0),
+						"right": new _Vector2.default(1, 0)
+				};
+				// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
+				// if you want to force WebGL
+				this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
+				// Set an ID for some simple css styling
+				this.renderer.view.id = "pixi";
+				document.body.appendChild(this.renderer.view);
 
-		// Pixelated scaling (optional)
-		PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
+				// Pixelated scaling (optional)
+				PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
 
-		this.controls = new _Controls2.default();
+				this.controls = new _Controls2.default();
+				this.controls.getFireObservable().subscribe(function (fire) {
+						return console.log(fire);
+				});
 
-		this.controls.getKeyDownObservable().subscribe(function (direction) {
-			return console.log(_this.keys.UP_PRESSED);
-		});
-		this.controls.getKeyUpObservable().subscribe(function (direction) {
-			return console.log(direction);
-		});
-		this.controls.getFireObservable().subscribe(function (fire) {
-			return console.log(fire);
-		});
+				// Base container
+				this.container = new PIXI.Container();
 
-		// Base container
-		this.container = new PIXI.Container();
+				// Standard 16x16 image provided with this repo
+				var texture = PIXI.Texture.fromImage("/images/pixi.png");
+				this.pixi = new PIXI.Sprite(texture);
+				this.circle = new _MyCircle2.default();
+				this.square = new _Ship2.default();
 
-		// Standard 16x16 image provided with this repo
-		var texture = PIXI.Texture.fromImage("/images/pixi.png");
-		this.pixi = new PIXI.Sprite(texture);
-		this.circle = new _MyCircle2.default();
-		this.square = new _Ship2.default();
-		this.container.addChild(this.square);
+				this.controls.getKeyDownObservable().subscribe(function (direction) {
+						console.log(vectorDispatch[direction]);
+						_this.square.addVector(vectorDispatch[direction]);
+				});
 
-		// Set anchor to the middle
-		this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
+				this.controls.getKeyUpObservable().subscribe(function (direction) {
+						return console.log(direction);
+				});
 
-		// Set position to middle of the screen
-		this.pixi.position.x = window.innerWidth / 2;
-		this.pixi.position.y = window.innerHeight / 2;
+				this.container.addChild(this.square);
 
-		// Scale the sprite a little
-		this.pixi.scale.x = this.pixi.scale.y = 5;
+				// Set anchor to the middle
+				this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
 
-		// Add the sprite to the scene
-		this.container.addChild(this.pixi);
-	}
+				// Set position to middle of the screen
+				this.pixi.position.x = window.innerWidth / 2;
+				this.pixi.position.y = window.innerHeight / 2;
 
-	_createClass(Game, [{
-		key: "animate",
-		value: function animate() {
-			// Rotate it a little each frame
-			this.pixi.rotation -= 0.1;
+				// Scale the sprite a little
+				this.pixi.scale.x = this.pixi.scale.y = 5;
 
-			// Render the scene
-			this.renderer.render(this.container);
-
-			// Request to render at next browser redraw
-			requestAnimationFrame(this.animate.bind(this));
+				// Add the sprite to the scene
+				this.container.addChild(this.pixi);
 		}
-	}]);
 
-	return Game;
+		_createClass(Game, [{
+				key: "animate",
+				value: function animate() {
+						// Rotate it a little each frame
+						this.pixi.rotation -= 0.1;
+						// Render the scene
+						this.renderer.render(this.container);
+
+						// Request to render at next browser redraw
+						requestAnimationFrame(this.animate.bind(this));
+				}
+		}, {
+				key: "getVectorFromDirection",
+				value: function getVectorFromDirection(direction) {}
+		}]);
+
+		return Game;
 }();
 
-},{"./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Controls.js","./Keys":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Keys.js","./MyCircle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js","./Ship":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Ship.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
+},{"./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Controls.js","./Keys":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Keys.js","./MyCircle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js","./Ship":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Ship.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
 
 //# sourceMappingURL=main.js.map

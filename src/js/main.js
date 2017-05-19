@@ -3,6 +3,7 @@ import MyCircle from "./MyCircle";
 import Ship from "./Ship";
 import Controls from "./Controls";
 import Keys from "./Keys";
+import Vector from "./lib/Vector";
 
 document.addEventListener("DOMContentLoaded", () => {
 	// Create a game class and start its animation
@@ -15,7 +16,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
 class Game {
 	constructor() {
-    this.keys = new Keys();
+    const vectorDispatch = {
+      "up":new Vector(0, -1),
+      "down":new Vector(0,1),
+      "left":new Vector(-1,0),
+      "right":new Vector(1,0)
+    };
 		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
 		// if you want to force WebGL
 		this.renderer = PIXI.autoDetectRenderer(
@@ -30,11 +36,6 @@ class Game {
 		PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
 
     this.controls = new Controls();
-
-    this.controls.getKeyDownObservable()
-      .subscribe(direction => console.log(this.keys.UP_PRESSED));
-    this.controls.getKeyUpObservable()
-      .subscribe(direction => console.log(direction));
     this.controls.getFireObservable()
       .subscribe(fire => console.log(fire));
 
@@ -46,6 +47,16 @@ class Game {
 		this.pixi = new PIXI.Sprite(texture);
     this.circle = new MyCircle();
     this.square = new Ship();
+
+    this.controls.getKeyDownObservable()
+      .subscribe(direction => {
+        console.log(vectorDispatch[direction]);
+        this.square.addVector(vectorDispatch[direction]);
+      });
+
+    this.controls.getKeyUpObservable()
+      .subscribe(direction => console.log(direction));
+
     this.container.addChild(this.square);
 
 		// Set anchor to the middle
@@ -65,11 +76,14 @@ class Game {
 	animate() {
 		// Rotate it a little each frame
 		this.pixi.rotation -= 0.1;
-
 		// Render the scene
 		this.renderer.render(this.container);
 
 		// Request to render at next browser redraw
 		requestAnimationFrame(this.animate.bind(this));
 	}
+
+  getVectorFromDirection(direction) {
+
+  }
 }
