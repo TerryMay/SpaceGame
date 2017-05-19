@@ -27569,7 +27569,7 @@ var MyCicle = function (_PIXI$Container) {
 
 exports.default = MyCicle;
 
-},{"pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MySquare.js":[function(require,module,exports){
+},{"pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Ship.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27588,27 +27588,28 @@ function _possibleConstructorReturn(self, call) { if (!self) { throw new Referen
 
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
-var MySquare = function (_PIXI$Container) {
-  _inherits(MySquare, _PIXI$Container);
+var MyCicle = function (_PIXI$Container) {
+  _inherits(MyCicle, _PIXI$Container);
 
-  function MySquare() {
-    _classCallCheck(this, MySquare);
+  function MyCicle() {
+    _classCallCheck(this, MyCicle);
 
-    var _this = _possibleConstructorReturn(this, (MySquare.__proto__ || Object.getPrototypeOf(MySquare)).call(this));
+    var _this = _possibleConstructorReturn(this, (MyCicle.__proto__ || Object.getPrototypeOf(MyCicle)).call(this));
 
     var graphics = new PIXI.Graphics();
     graphics.x = window.innerWidth / 2;
     graphics.y = window.innerHeight / 2;
     graphics.beginFill(0xFFFFFF, 1);
-    graphics.drawRect(100, 100, 100, 100);
+    _this.path = [new PIXI.Point(50, 0), new PIXI.Point(50, 100), new PIXI.Point(0, 50)];
+    graphics.drawPolygon(_this.path);
     _this.addChild(graphics);
     return _this;
   }
 
-  return MySquare;
+  return MyCicle;
 }(PIXI.Container);
 
-exports.default = MySquare;
+exports.default = MyCicle;
 
 },{"pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js":[function(require,module,exports){
 "use strict";
@@ -27623,9 +27624,9 @@ var _MyCircle = require("./MyCircle");
 
 var _MyCircle2 = _interopRequireDefault(_MyCircle);
 
-var _MySquare = require("./MySquare");
+var _Ship = require("./Ship");
 
-var _MySquare2 = _interopRequireDefault(_MySquare);
+var _Ship2 = _interopRequireDefault(_Ship);
 
 var _Controls = require("./Controls");
 
@@ -27642,85 +27643,84 @@ function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj;
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 document.addEventListener("DOMContentLoaded", function () {
-		// Create a game class and start its animation
-		var game = new Game();
-		game.animate();
+	// Create a game class and start its animation
+	var game = new Game();
+	game.animate();
 
-		// Expose the game instance to global scope (optional)
-		window.game = game;
+	// Expose the game instance to global scope (optional)
+	window.game = game;
 });
 
 var Game = function () {
-		function Game() {
-				var _this = this;
+	function Game() {
+		var _this = this;
 
-				_classCallCheck(this, Game);
+		_classCallCheck(this, Game);
 
-				this.keys = new _Keys2.default();
-				// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
-				// if you want to force WebGL
-				this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
-				// Set an ID for some simple css styling
-				this.renderer.view.id = "pixi";
-				document.body.appendChild(this.renderer.view);
+		this.keys = new _Keys2.default();
+		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
+		// if you want to force WebGL
+		this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
+		// Set an ID for some simple css styling
+		this.renderer.view.id = "pixi";
+		document.body.appendChild(this.renderer.view);
 
-				// Pixelated scaling (optional)
-				PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
+		// Pixelated scaling (optional)
+		PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
 
-				this.controls = new _Controls2.default();
+		this.controls = new _Controls2.default();
 
-				this.controls.getKeyDownObservable().subscribe(function (direction) {
-						return console.log(_this.keys.UP_PRESSED);
-				});
-				this.controls.getKeyUpObservable().subscribe(function (direction) {
-						return console.log(direction);
-				});
-				this.controls.getFireObservable().subscribe(function (fire) {
-						return console.log(fire);
-				});
+		this.controls.getKeyDownObservable().subscribe(function (direction) {
+			return console.log(_this.keys.UP_PRESSED);
+		});
+		this.controls.getKeyUpObservable().subscribe(function (direction) {
+			return console.log(direction);
+		});
+		this.controls.getFireObservable().subscribe(function (fire) {
+			return console.log(fire);
+		});
 
-				// Base container
-				this.container = new PIXI.Container();
+		// Base container
+		this.container = new PIXI.Container();
 
-				// Standard 16x16 image provided with this repo
-				var texture = PIXI.Texture.fromImage("/images/pixi.png");
-				this.pixi = new PIXI.Sprite(texture);
-				this.circle = new _MyCircle2.default();
-				this.square = new _MySquare2.default();
-				this.container.addChild(this.square);
+		// Standard 16x16 image provided with this repo
+		var texture = PIXI.Texture.fromImage("/images/pixi.png");
+		this.pixi = new PIXI.Sprite(texture);
+		this.circle = new _MyCircle2.default();
+		this.square = new _Ship2.default();
+		this.container.addChild(this.square);
 
-				// Set anchor to the middle
-				this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
+		// Set anchor to the middle
+		this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
 
-				// Set position to middle of the screen
-				this.pixi.position.x = window.innerWidth / 2;
-				this.pixi.position.y = window.innerHeight / 2;
+		// Set position to middle of the screen
+		this.pixi.position.x = window.innerWidth / 2;
+		this.pixi.position.y = window.innerHeight / 2;
 
-				// Scale the sprite a little
-				this.pixi.scale.x = this.pixi.scale.y = 5;
+		// Scale the sprite a little
+		this.pixi.scale.x = this.pixi.scale.y = 5;
 
-				// Add the sprite to the scene
-				this.container.addChild(this.pixi);
+		// Add the sprite to the scene
+		this.container.addChild(this.pixi);
+	}
+
+	_createClass(Game, [{
+		key: "animate",
+		value: function animate() {
+			// Rotate it a little each frame
+			this.pixi.rotation -= 0.1;
+
+			// Render the scene
+			this.renderer.render(this.container);
+
+			// Request to render at next browser redraw
+			requestAnimationFrame(this.animate.bind(this));
 		}
+	}]);
 
-		_createClass(Game, [{
-				key: "animate",
-				value: function animate() {
-						// Rotate it a little each frame
-						this.pixi.rotation -= 0.1;
-						this.square.position.x += 0.1;
-
-						// Render the scene
-						this.renderer.render(this.container);
-
-						// Request to render at next browser redraw
-						requestAnimationFrame(this.animate.bind(this));
-				}
-		}]);
-
-		return Game;
+	return Game;
 }();
 
-},{"./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Controls.js","./Keys":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Keys.js","./MyCircle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js","./MySquare":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MySquare.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
+},{"./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Controls.js","./Keys":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Keys.js","./MyCircle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js","./Ship":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Ship.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
 
 //# sourceMappingURL=main.js.map

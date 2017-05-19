@@ -1,6 +1,6 @@
 import * as PIXI from "pixi.js";
 import MyCircle from "./MyCircle";
-import MySquare from "./MySquare";
+import Ship from "./Ship";
 import Controls from "./Controls";
 import Keys from "./Keys";
 
@@ -45,7 +45,7 @@ class Game {
 		let texture = PIXI.Texture.fromImage("/images/pixi.png");
 		this.pixi = new PIXI.Sprite(texture);
     this.circle = new MyCircle();
-    this.square = new MySquare();
+    this.square = new Ship();
     this.container.addChild(this.square);
 
 		// Set anchor to the middle
@@ -65,7 +65,6 @@ class Game {
 	animate() {
 		// Rotate it a little each frame
 		this.pixi.rotation -= 0.1;
-    this.square.position.x += 0.1;
 
 		// Render the scene
 		this.renderer.render(this.container);
