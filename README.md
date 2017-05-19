@@ -1,5 +1,9 @@
 This Repository is a place where I play around with this PIXI lib.
 
+clone
+npm install
+gulp watch
+
 # Pixi.js boilerplate
   - used as a starting point
   
