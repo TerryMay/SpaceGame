@@ -19,8 +19,8 @@ class Game {
     const vectorDispatch = {
       "up":new Vector(0, -1),
       "down":new Vector(0,1),
-      "left":new Vector(-1,0),
-      "right":new Vector(1,0)
+      "left":new Vector(0, 1),
+      "right":new Vector(0, -1)
     };
 		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
 		// if you want to force WebGL
@@ -41,30 +41,20 @@ class Game {
 
 		// Base container
 		this.container = new PIXI.Container();
-
-		// Standard 16x16 image provided with this repo
-		let texture = PIXI.Texture.fromImage("/images/pixi.png");
-		// this.pixi = new PIXI.Sprite(texture);
-    this.circle = new MyCircle();
-    this.square = new Ship();
+    this.ship = new Ship(window.innerWidth / 2, window.innerHeight / 2);
 
     this.controls.getKeyDownObservable()
       .subscribe(direction => {
-        console.log(vectorDispatch[direction]);
-        this.square.addVector(vectorDispatch[direction]);
+        this.ship.addDirection(vectorDispatch[direction]);
       });
 
     this.controls.getKeyUpObservable()
       .subscribe(direction => console.log(direction));
 
-    this.container.addChild(this.square);
+    this.container.addChild(this.ship);
 
 		// Set anchor to the middle
 		//this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
-
-		// Set position to middle of the screen
-		this.square.position.x = window.innerWidth / 2;
-		this.square.position.y = window.innerHeight / 2;
 	}
 
 	animate() {

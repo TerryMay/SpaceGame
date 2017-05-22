@@ -31,13 +31,13 @@ class Vector {
   }
 
   getAngle() {
-    return Math.atan2(this._y, this._x);
+    return Math.atan2(this.y, this.x);
   }
 
   setLength(length) {
     let angle = this.getAngle();
     this.x = Math.cos(angle) * length;
-    this.y = MAth.sin(angle) * length;
+    this.y = Math.sin(angle) * length;
   }
 
   getLength() {

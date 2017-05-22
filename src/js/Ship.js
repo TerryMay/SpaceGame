@@ -1,19 +1,24 @@
 import * as PIXI from "pixi.js";
 import Vector from "./lib/Vector";
 
-class MyCicle extends PIXI.Container {
-  constructor() {
+class Ship extends PIXI.Container {
+  constructor(x, y, speed = 1, direction = 0) {
     super();
-    this.vector = new Vector(0,0);
-    this.direction = new Vector(0,0);
+    this.position = new Vector(x,y);
+    this.velocity = new Vector(0,0);
+    this.velocity.setLength(speed);
+    this.velocity.setAngle(direction);
+
     this.graphics = new PIXI.Graphics();
+    
     this.addChild(this.graphics);
     this.update();
   }
 
   update() {
-    this.x = this.vector.x;
-    this.y = this.vector.y;
+    this.x = this.position.x;
+    this.y = this.position.y;
+    this.rotation = this.velocity.getAngle();
     this.draw();
   }
 
@@ -29,18 +34,13 @@ class MyCicle extends PIXI.Container {
     this.graphics.drawPolygon(this.path);
   }
 
-  addVector(v2) {
-    this.vector = this.vector.add(v2);
-    this.update();
-  }
-
   addDirection(v2) {
-    this.direction = this.direction.add(v2);
+    this.velocity = this.velocity.add(v2);
     this.update();
   }
 
-  getVector() {
-    return this.vector;
+  getPosition() {
+    return this.position;
   }
 
   getDirection() {
@@ -48,4 +48,4 @@ class MyCicle extends PIXI.Container {
   }
 }
 
-export default MyCicle;
+export default Ship;

@@ -27596,27 +27596,35 @@ function _possibleConstructorReturn(self, call) { if (!self) { throw new Referen
 
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
-var MyCicle = function (_PIXI$Container) {
-  _inherits(MyCicle, _PIXI$Container);
+var Ship = function (_PIXI$Container) {
+  _inherits(Ship, _PIXI$Container);
 
-  function MyCicle() {
-    _classCallCheck(this, MyCicle);
+  function Ship(x, y) {
+    var speed = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 1;
+    var direction = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
 
-    var _this = _possibleConstructorReturn(this, (MyCicle.__proto__ || Object.getPrototypeOf(MyCicle)).call(this));
+    _classCallCheck(this, Ship);
 
-    _this.vector = new _Vector2.default(0, 0);
-    _this.direction = new _Vector2.default(0, 0);
+    var _this = _possibleConstructorReturn(this, (Ship.__proto__ || Object.getPrototypeOf(Ship)).call(this));
+
+    _this.position = new _Vector2.default(x, y);
+    _this.velocity = new _Vector2.default(0, 0);
+    _this.velocity.setLength(speed);
+    _this.velocity.setAngle(direction);
+
     _this.graphics = new PIXI.Graphics();
+
     _this.addChild(_this.graphics);
     _this.update();
     return _this;
   }
 
-  _createClass(MyCicle, [{
+  _createClass(Ship, [{
     key: "update",
     value: function update() {
-      this.x = this.vector.x;
-      this.y = this.vector.y;
+      this.x = this.position.x;
+      this.y = this.position.y;
+      this.rotation = this.velocity.getAngle();
       this.draw();
     }
   }, {
@@ -27629,21 +27637,15 @@ var MyCicle = function (_PIXI$Container) {
       this.graphics.drawPolygon(this.path);
     }
   }, {
-    key: "addVector",
-    value: function addVector(v2) {
-      this.vector = this.vector.add(v2);
-      this.update();
-    }
-  }, {
     key: "addDirection",
     value: function addDirection(v2) {
-      this.direction = this.direction.add(v2);
+      this.velocity = this.velocity.add(v2);
       this.update();
     }
   }, {
-    key: "getVector",
-    value: function getVector() {
-      return this.vector;
+    key: "getPosition",
+    value: function getPosition() {
+      return this.position;
     }
   }, {
     key: "getDirection",
@@ -27652,10 +27654,10 @@ var MyCicle = function (_PIXI$Container) {
     }
   }]);
 
-  return MyCicle;
+  return Ship;
 }(PIXI.Container);
 
-exports.default = MyCicle;
+exports.default = Ship;
 
 },{"./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js":[function(require,module,exports){
 "use strict";
@@ -27711,14 +27713,14 @@ var Vector = function () {
   }, {
     key: "getAngle",
     value: function getAngle() {
-      return Math.atan2(this._y, this._x);
+      return Math.atan2(this.y, this.x);
     }
   }, {
     key: "setLength",
     value: function setLength(length) {
       var angle = this.getAngle();
       this.x = Math.cos(angle) * length;
-      this.y = MAth.sin(angle) * length;
+      this.y = Math.sin(angle) * length;
     }
   }, {
     key: "getLength",
@@ -27829,8 +27831,8 @@ var Game = function () {
 				var vectorDispatch = {
 						"up": new _Vector2.default(0, -1),
 						"down": new _Vector2.default(0, 1),
-						"left": new _Vector2.default(-1, 0),
-						"right": new _Vector2.default(1, 0)
+						"left": new _Vector2.default(0, 1),
+						"right": new _Vector2.default(0, -1)
 				};
 				// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
 				// if you want to force WebGL
@@ -27849,30 +27851,20 @@ var Game = function () {
 
 				// Base container
 				this.container = new PIXI.Container();
-
-				// Standard 16x16 image provided with this repo
-				var texture = PIXI.Texture.fromImage("/images/pixi.png");
-				// this.pixi = new PIXI.Sprite(texture);
-				this.circle = new _MyCircle2.default();
-				this.square = new _Ship2.default();
+				this.ship = new _Ship2.default(window.innerWidth / 2, window.innerHeight / 2);
 
 				this.controls.getKeyDownObservable().subscribe(function (direction) {
-						console.log(vectorDispatch[direction]);
-						_this.square.addVector(vectorDispatch[direction]);
+						_this.ship.addDirection(vectorDispatch[direction]);
 				});
 
 				this.controls.getKeyUpObservable().subscribe(function (direction) {
 						return console.log(direction);
 				});
 
-				this.container.addChild(this.square);
+				this.container.addChild(this.ship);
 
 				// Set anchor to the middle
 				//this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
-
-				// Set position to middle of the screen
-				this.square.position.x = window.innerWidth / 2;
-				this.square.position.y = window.innerHeight / 2;
 		}
 
 		_createClass(Game, [{
