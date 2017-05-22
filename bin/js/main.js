@@ -27625,7 +27625,7 @@ var MyCicle = function (_PIXI$Container) {
       this.graphics.x = 0;
       this.graphics.y = 0;
       this.graphics.beginFill(0xFFFFFF, 1);
-      this.path = [new PIXI.Point(50, 0), new PIXI.Point(50, 100), new PIXI.Point(0, 50)];
+      this.path = [new PIXI.Point(10, 0), new PIXI.Point(0, 20), new PIXI.Point(20, 20)];
       this.graphics.drawPolygon(this.path);
     }
   }, {
@@ -27852,7 +27852,7 @@ var Game = function () {
 
 				// Standard 16x16 image provided with this repo
 				var texture = PIXI.Texture.fromImage("/images/pixi.png");
-				this.pixi = new PIXI.Sprite(texture);
+				// this.pixi = new PIXI.Sprite(texture);
 				this.circle = new _MyCircle2.default();
 				this.square = new _Ship2.default();
 
@@ -27868,24 +27868,17 @@ var Game = function () {
 				this.container.addChild(this.square);
 
 				// Set anchor to the middle
-				this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
+				//this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
 
 				// Set position to middle of the screen
-				this.pixi.position.x = window.innerWidth / 2;
-				this.pixi.position.y = window.innerHeight / 2;
-
-				// Scale the sprite a little
-				this.pixi.scale.x = this.pixi.scale.y = 5;
-
-				// Add the sprite to the scene
-				this.container.addChild(this.pixi);
+				this.square.position.x = window.innerWidth / 2;
+				this.square.position.y = window.innerHeight / 2;
 		}
 
 		_createClass(Game, [{
 				key: "animate",
 				value: function animate() {
-						// Rotate it a little each frame
-						this.pixi.rotation -= 0.1;
+
 						// Render the scene
 						this.renderer.render(this.container);
 

@@ -22,9 +22,9 @@ class MyCicle extends PIXI.Container {
     this.graphics.y = 0;
     this.graphics.beginFill(0xFFFFFF, 1);
     this.path = [
-      new PIXI.Point(50,0),
-      new PIXI.Point(50, 100),
-      new PIXI.Point(0, 50),
+      new PIXI.Point(10, 0),
+      new PIXI.Point(0, 20),
+      new PIXI.Point(20, 20),
     ]
     this.graphics.drawPolygon(this.path);
   }

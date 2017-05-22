@@ -44,7 +44,7 @@ class Game {
 
 		// Standard 16x16 image provided with this repo
 		let texture = PIXI.Texture.fromImage("/images/pixi.png");
-		this.pixi = new PIXI.Sprite(texture);
+		// this.pixi = new PIXI.Sprite(texture);
     this.circle = new MyCircle();
     this.square = new Ship();
 
@@ -60,22 +60,15 @@ class Game {
     this.container.addChild(this.square);
 
 		// Set anchor to the middle
-		this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
+		//this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
 
 		// Set position to middle of the screen
-		this.pixi.position.x = window.innerWidth / 2;
-		this.pixi.position.y = window.innerHeight / 2;
-
-		// Scale the sprite a little
-		this.pixi.scale.x = this.pixi.scale.y = 5;
-
-		// Add the sprite to the scene
-		this.container.addChild(this.pixi);
+		this.square.position.x = window.innerWidth / 2;
+		this.square.position.y = window.innerHeight / 2;
 	}
 
 	animate() {
-		// Rotate it a little each frame
-		this.pixi.rotation -= 0.1;
+		
 		// Render the scene
 		this.renderer.render(this.container);
 
