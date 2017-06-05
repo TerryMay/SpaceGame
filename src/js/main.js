@@ -51,7 +51,7 @@ class Game {
 	animate() {
 		// Render the scene
 		this.renderer.render(this.stage);
-    this.omega.update();
+    //this.omega.update();
 		// Request to render at next browser redraw
 		requestAnimationFrame(this.animate.bind(this));
 	}

@@ -37,7 +37,8 @@ class Omega extends PIXI.Sprite {
       });
   }
 
-  update() {
+  updateTransform() {
+    super.updateTransform();
     this.position.addTo(this.velocity);
     this.x = this.position.getX();
     this.y = this.position.getY();
@@ -56,7 +57,7 @@ class Omega extends PIXI.Sprite {
       this.hull.clear();
       switch (state) {
         case Omega.HULL_STATE.THRUSTING:
-          this.hull.lineStyle(4, 0xFFFFFF, 1);
+          this.hull.lineStyle(8, 0xFFFFFF, 1);
           this.hull.moveTo(0, 25);
           this.hull.lineTo(-(Math.random()*25), 25);
         case Omega.HULL_STATE.CLEAN:

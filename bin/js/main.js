@@ -27459,6 +27459,8 @@ Object.defineProperty(exports, "__esModule", {
   value: true
 });
 
+var _get = function get(object, property, receiver) { if (object === null) object = Function.prototype; var desc = Object.getOwnPropertyDescriptor(object, property); if (desc === undefined) { var parent = Object.getPrototypeOf(object); if (parent === null) { return undefined; } else { return get(parent, property, receiver); } } else if ("value" in desc) { return desc.value; } else { var getter = desc.get; if (getter === undefined) { return undefined; } return getter.call(receiver); } };
+
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
 var _pixi = require("pixi.js");
@@ -27536,8 +27538,9 @@ var Omega = function (_PIXI$Sprite) {
       });
     }
   }, {
-    key: "update",
-    value: function update() {
+    key: "updateTransform",
+    value: function updateTransform() {
+      _get(Omega.prototype.__proto__ || Object.getPrototypeOf(Omega.prototype), "updateTransform", this).call(this);
       this.position.addTo(this.velocity);
       this.x = this.position.getX();
       this.y = this.position.getY();
@@ -27557,7 +27560,7 @@ var Omega = function (_PIXI$Sprite) {
         this.hull.clear();
         switch (state) {
           case Omega.HULL_STATE.THRUSTING:
-            this.hull.lineStyle(4, 0xFFFFFF, 1);
+            this.hull.lineStyle(8, 0xFFFFFF, 1);
             this.hull.moveTo(0, 25);
             this.hull.lineTo(-(Math.random() * 25), 25);
           case Omega.HULL_STATE.CLEAN:
@@ -28169,7 +28172,7 @@ var Game = function () {
 		value: function animate() {
 			// Render the scene
 			this.renderer.render(this.stage);
-			this.omega.update();
+			//this.omega.update();
 			// Request to render at next browser redraw
 			requestAnimationFrame(this.animate.bind(this));
 		}
