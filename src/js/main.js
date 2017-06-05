@@ -1,8 +1,10 @@
 import * as PIXI from "pixi.js";
 import MyCircle from "./MyCircle";
 import Ship from "./Ship";
-import Controls from "./Controls";
+import Omega from "./Omega";
+import OmegaEngine from "./lib/OmegaEngine";
 import Keys from "./Keys";
+import Controls from "./lib/Controls";
 import Vector from "./lib/Vector";
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -16,12 +18,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
 class Game {
 	constructor() {
-    const vectorDispatch = {
-      "up":new Vector(0, -1),
-      "down":new Vector(0,1),
-      "left":new Vector(0, 1),
-      "right":new Vector(0, -1)
-    };
 		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
 		// if you want to force WebGL
 		this.renderer = PIXI.autoDetectRenderer(
@@ -40,28 +36,21 @@ class Game {
       .subscribe(fire => console.log(fire));
 
 		// Base container
-		this.container = new PIXI.Container();
-    this.ship = new Ship(window.innerWidth / 2, window.innerHeight / 2);
-
-    this.controls.getKeyDownObservable()
-      .subscribe(direction => {
-        this.ship.addDirection(vectorDispatch[direction]);
-      });
-
-    this.controls.getKeyUpObservable()
-      .subscribe(direction => console.log(direction));
-
-    this.container.addChild(this.ship);
-
+		this.stage = new PIXI.Container();
+    //this.ship = new Ship(this.container.width/2, this.container.height/2);
+    //this.ship.addControls(this.controls.getControlsObservble());
+    //this.container.addChild(this.ship);
+    this.omega = new Omega(100,100, new OmegaEngine());
+    this.omega.setControls(this.controls.getObservable());
+    this.stage.addChild(this.omega);
 		// Set anchor to the middle
 		//this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
 	}
 
 	animate() {
-		
 		// Render the scene
-		this.renderer.render(this.container);
-
+		this.renderer.render(this.stage);
+    this.omega.update();
 		// Request to render at next browser redraw
 		requestAnimationFrame(this.animate.bind(this));
 	}

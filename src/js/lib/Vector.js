@@ -71,8 +71,8 @@ class Vector {
   }
 
   multiplyBy(val) {
-    this.x += val;
-    this.y += val;
+    this.x *= val;
+    this.y *= val;
   }
 
   divideBy(val) {
