@@ -27490,7 +27490,8 @@ var Omega = function (_PIXI$Sprite) {
     key: "HULL_STATE",
     get: function get() {
       return {
-        CLEAN: 'clean'
+        CLEAN: 'clean',
+        THRUSTING: 'thrusting'
       };
     }
   }]);
@@ -27519,7 +27520,6 @@ var Omega = function (_PIXI$Sprite) {
     _this.hull = new PIXI.Graphics();
     _this.hullIsDirty = true;
     _this.addChild(_this.hull);
-    console.log(_this.position);
     return _this;
   }
 
@@ -27542,7 +27542,10 @@ var Omega = function (_PIXI$Sprite) {
       this.x = this.position.getX();
       this.y = this.position.getY();
       this.rotation = this.angle;
-      if (this.hullIsDirty) {
+      if (this.engine.thrusting) {
+        this.hullIsDirty = true;
+        this.renderHull(Omega.HULL_STATE.THRUSTING);
+      } else if (this.hullIsDirty) {
         this.renderHull(Omega.HULL_STATE.CLEAN);
         this.hullIsDirty = false;
       }
@@ -27550,14 +27553,21 @@ var Omega = function (_PIXI$Sprite) {
   }, {
     key: "renderHull",
     value: function renderHull(state) {
-      switch (state) {
-        case Omega.HULL_STATE.CLEAN:
-          this.hull.lineStyle(2, 0xFFFFFF, 1);
-          this.hull.moveTo(0, 0);
-          this.hull.lineTo(50, 25);
-          this.hull.lineTo(0, 50);
-          this.hull.lineTo(0, 0);
-          break;
+      if (this.hullIsDirty) {
+        this.hull.clear();
+        switch (state) {
+          case Omega.HULL_STATE.THRUSTING:
+            this.hull.lineStyle(4, 0xFFFFFF, 1);
+            this.hull.moveTo(0, 25);
+            this.hull.lineTo(-(Math.random() * 25), 25);
+          case Omega.HULL_STATE.CLEAN:
+            this.hull.lineStyle(2, 0xFFFFFF, 1);
+            this.hull.moveTo(0, 0);
+            this.hull.lineTo(50, 25);
+            this.hull.lineTo(0, 50);
+            this.hull.lineTo(0, 0);
+            break;
+        }
       }
     }
   }]);
@@ -28143,10 +28153,11 @@ var Game = function () {
 
 		// Base container
 		this.stage = new PIXI.Container();
+		console.log(this.stage.width);
 		//this.ship = new Ship(this.container.width/2, this.container.height/2);
 		//this.ship.addControls(this.controls.getControlsObservble());
 		//this.container.addChild(this.ship);
-		this.omega = new _Omega2.default(100, 100, new _OmegaEngine2.default());
+		this.omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, new _OmegaEngine2.default());
 		this.omega.setControls(this.controls.getObservable());
 		this.stage.addChild(this.omega);
 		// Set anchor to the middle

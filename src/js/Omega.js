@@ -5,7 +5,8 @@ import Controls from "./lib/Controls";
 class Omega extends PIXI.Sprite {
   static get HULL_STATE() {
     return {
-      CLEAN:'clean'
+      CLEAN:'clean',
+      THRUSTING:'thrusting',
     };
   };
 
@@ -25,7 +26,6 @@ class Omega extends PIXI.Sprite {
     this.hull = new PIXI.Graphics();
     this.hullIsDirty = true;
     this.addChild(this.hull);
-    console.log(this.position);
   }
 
   setControls(controlsObservable) {
@@ -42,24 +42,33 @@ class Omega extends PIXI.Sprite {
     this.x = this.position.getX();
     this.y = this.position.getY();
     this.rotation = this.angle;
-    if (this.hullIsDirty) {
+    if (this.engine.thrusting) {
+      this.hullIsDirty = true;
+      this.renderHull(Omega.HULL_STATE.THRUSTING);
+    } else if (this.hullIsDirty) {
       this.renderHull(Omega.HULL_STATE.CLEAN);
       this.hullIsDirty = false;
     }
   }
 
   renderHull(state) {
-    switch (state) {
-      case Omega.HULL_STATE.CLEAN:
-        this.hull.lineStyle(2, 0xFFFFFF, 1);
-        this.hull.moveTo(0, 0);
-        this.hull.lineTo(50,25);
-        this.hull.lineTo(0,50);
-        this.hull.lineTo(0,0)
-        break;
+    if (this.hullIsDirty) {
+      this.hull.clear();
+      switch (state) {
+        case Omega.HULL_STATE.THRUSTING:
+          this.hull.lineStyle(4, 0xFFFFFF, 1);
+          this.hull.moveTo(0, 25);
+          this.hull.lineTo(-(Math.random()*25), 25);
+        case Omega.HULL_STATE.CLEAN:
+          this.hull.lineStyle(2, 0xFFFFFF, 1);
+          this.hull.moveTo(0, 0);
+          this.hull.lineTo(50,25);
+          this.hull.lineTo(0,50);
+          this.hull.lineTo(0,0)
+          break;
+      }
     }
   }
-
 }
 
 export default Omega;

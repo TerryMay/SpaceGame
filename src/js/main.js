@@ -37,10 +37,11 @@ class Game {
 
 		// Base container
 		this.stage = new PIXI.Container();
+    console.log(this.stage.width)
     //this.ship = new Ship(this.container.width/2, this.container.height/2);
     //this.ship.addControls(this.controls.getControlsObservble());
     //this.container.addChild(this.ship);
-    this.omega = new Omega(100,100, new OmegaEngine());
+    this.omega = new Omega(window.innerWidth / 2, window.innerHeight / 2, new OmegaEngine());
     this.omega.setControls(this.controls.getObservable());
     this.stage.addChild(this.omega);
 		// Set anchor to the middle
