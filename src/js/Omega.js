@@ -37,8 +37,7 @@ class Omega extends PIXI.Sprite {
       });
   }
 
-  updateTransform() {
-    super.updateTransform();
+  update() {
     this.position.addTo(this.velocity);
     this.x = this.position.getX();
     this.y = this.position.getY();

@@ -62,8 +62,7 @@ class Ship extends PIXI.DisplayObject {
     }).subscribe(vector => this.addDirection(vector));
   }
 
-  updateTransform() {
-    super.updateTransform();
+  update() {
     this.position.addTo(this.velocity);
     this.x = this.position.getX();
     this.y = this.position.getY();
