@@ -10,7 +10,7 @@ class Omega extends PIXI.Sprite {
     };
   };
 
-  constructor(x = 0, y = 0, engine, friction = new Vector(0.15, 0)) {
+  constructor(x = 0, y = 0, engine) {
     super();
     this.enabled = false;
     this.position = new Vector(x,y);
@@ -18,8 +18,6 @@ class Omega extends PIXI.Sprite {
     this.velocity.setLength(0);
     this.velocity.setAngle(0);
     this.angle = 0;
-
-    this.friction = friction;
     this.engine = engine;
     this.pivot = new PIXI.Point(25,25);
     this.anchor.set(0.5, 0.5);
@@ -29,8 +27,7 @@ class Omega extends PIXI.Sprite {
   }
 
   setControls(controlsObservable) {
-    controlsObservable
-      .flatMap(input => Rx.Observable.of(this.engine.getThrustVector(input)))
+    this.engine.getThrustEmitter(controlsObservable)
       .subscribe((thrustVector) => {
         this.velocity.addTo(thrustVector);
         this.angle = this.engine.getAngle();

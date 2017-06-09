@@ -27500,7 +27500,6 @@ var Omega = function (_PIXI$Sprite) {
     var x = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
     var y = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
     var engine = arguments[2];
-    var friction = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : new _Vector2.default(0.15, 0);
 
     _classCallCheck(this, Omega);
 
@@ -27512,8 +27511,6 @@ var Omega = function (_PIXI$Sprite) {
     _this.velocity.setLength(0);
     _this.velocity.setAngle(0);
     _this.angle = 0;
-
-    _this.friction = friction;
     _this.engine = engine;
     _this.pivot = new PIXI.Point(25, 25);
     _this.anchor.set(0.5, 0.5);
@@ -27528,9 +27525,7 @@ var Omega = function (_PIXI$Sprite) {
     value: function setControls(controlsObservable) {
       var _this2 = this;
 
-      controlsObservable.flatMap(function (input) {
-        return Rx.Observable.of(_this2.engine.getThrustVector(input));
-      }).subscribe(function (thrustVector) {
+      this.engine.getThrustEmitter(controlsObservable).subscribe(function (thrustVector) {
         _this2.velocity.addTo(thrustVector);
         _this2.angle = _this2.engine.getAngle();
       });
@@ -27840,10 +27835,9 @@ var Controls = function () {
       //The `downHandler`
       key.downHandler = function (event) {
         if (event.keyCode === key.code) {
-
-          //if (key.isUp && key.press)  {
-          key.press();
-          //};
+          if (key.isUp && key.press) {
+            key.press();
+          };
 
           key.isDown = true;
           key.isUp = false;
@@ -27905,6 +27899,9 @@ var OmegaEngine = function () {
     this.turningLeft = false;
     this.turningRight = false;
     this.thrusting = false;
+    this.thrustObserver = null;
+    this.impluse = 100;
+    this.impluseEngine = null;
   }
 
   _createClass(OmegaEngine, [{
@@ -27913,45 +27910,76 @@ var OmegaEngine = function () {
       return this.angle;
     }
   }, {
-    key: "getThrustVector",
-    value: function getThrustVector(input) {
-      switch (input) {
-        case _Controls2.default.KEY.DOWN_DOWN:
-        case _Controls2.default.KEY.UP_UP:
-          this.thrusting = false;
-          break;
-        case _Controls2.default.KEY.UP_DOWN:
-          this.thrusting = true;
-          break;
-        case _Controls2.default.KEY.LEFT_UP:
-          this.turningLeft = false;
-          break;
-        case _Controls2.default.KEY.LEFT_DOWN:
-          this.turningLeft = true;
-          break;
-        case _Controls2.default.KEY.RIGHT_UP:
-          this.turningRight = false;
-          break;
-        case _Controls2.default.KEY.RIGHT_DOWN:
-          this.turningRight = true;
-          break;
-        default:
-          break;
-      }
+    key: "getThrustEmitter",
+    value: function getThrustEmitter(inputObservable) {
+      var _this = this;
 
-      if (this.turningRight) {
-        this.angle += .05;
-      }
-      if (this.turningLeft) {
-        this.angle -= .05;
-      }
-      if (this.thrusting) {
-        this.thrust.setLength(.1);
+      return Rx.Observable.create(function (observer) {
+        observer.onNext(new _Vector2.default(0, 0));
+        _this.thrustObserver = observer;
+        _this.handleInput(inputObservable);
+      });
+    }
+  }, {
+    key: "emitEngineThrust",
+    value: function emitEngineThrust() {
+      var _this2 = this;
+
+      if (this.thrusting || this.turningLeft || this.turningRight) {
+        if (this.impluseEngine === null) {
+          this.impluseEngine = setInterval(function () {
+            console.log("*");
+            _this2.thrustObserver.onNext(_this2.thrust);
+            if (_this2.turningRight) {
+              _this2.angle += .05;
+            }
+            if (_this2.turningLeft) {
+              _this2.angle -= .05;
+            }
+          }, this.impluse);
+        }
       } else {
-        this.thrust.setLength(0);
+        this.thrustObserver.onNext(this.thrust);
+        clearInterval(this.impluseEngine);
+        this.impluseEngine = null;
       }
-      this.thrust.setAngle(this.angle);
-      return this.thrust;
+    }
+  }, {
+    key: "handleInput",
+    value: function handleInput(inputObservable) {
+      var _this3 = this;
+
+      inputObservable.subscribe(function (input) {
+        switch (input) {
+          case _Controls2.default.KEY.UP_UP:
+            _this3.thrusting = false;
+            break;
+          case _Controls2.default.KEY.UP_DOWN:
+            _this3.thrusting = true;
+            break;
+          case _Controls2.default.KEY.LEFT_UP:
+            _this3.turningLeft = false;
+            break;
+          case _Controls2.default.KEY.LEFT_DOWN:
+            _this3.turningLeft = true;
+            break;
+          case _Controls2.default.KEY.RIGHT_UP:
+            _this3.turningRight = false;
+            break;
+          case _Controls2.default.KEY.RIGHT_DOWN:
+            _this3.turningRight = true;
+            break;
+          default:
+            break;
+        }
+        if (_this3.thrusting) {
+          _this3.thrust.setLength(.051);
+        } else {
+          _this3.thrust.setLength(0);
+        }
+        _this3.thrust.setAngle(_this3.angle);
+        _this3.emitEngineThrust();
+      });
     }
   }]);
 

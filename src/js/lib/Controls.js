@@ -1,5 +1,5 @@
 class Controls {
-  
+
   static get KEY() {
     return {
       UP_UP      : 0x01,
@@ -67,10 +67,9 @@ class Controls {
     //The `downHandler`
     key.downHandler = function(event) {
       if (event.keyCode === key.code) {
-        
-        //if (key.isUp && key.press)  {
+        if (key.isUp && key.press)  {
           key.press()
-        //};
+        };
 
         key.isDown = true;
         key.isUp = false;

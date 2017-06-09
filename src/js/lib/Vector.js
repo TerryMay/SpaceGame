@@ -7,7 +7,7 @@ class Vector {
   toString() {
     return `vector x:${this.getX()} y:${this.getY()}`;
   }
-  
+
   setX(value) {
     this.x = value;
   }
