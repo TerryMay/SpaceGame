@@ -27394,24 +27394,7 @@ module.exports = function () {
     };
 };
 
-},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Keys.js":[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-var Keys = function Keys() {
-  _classCallCheck(this, Keys);
-
-  this.UP_PRESSED = 0x200;
-};
-
-exports.default = Keys;
-
-},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js":[function(require,module,exports){
+},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -28132,10 +28115,6 @@ var _OmegaEngine = require("./lib/OmegaEngine");
 
 var _OmegaEngine2 = _interopRequireDefault(_OmegaEngine);
 
-var _Keys = require("./Keys");
-
-var _Keys2 = _interopRequireDefault(_Keys);
-
 var _Controls = require("./lib/Controls");
 
 var _Controls2 = _interopRequireDefault(_Controls);
@@ -28208,6 +28187,6 @@ var Game = function () {
 	return Game;
 }();
 
-},{"./Keys":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Keys.js","./MyCircle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js","./Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Omega.js","./Ship":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Ship.js","./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
+},{"./MyCircle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js","./Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Omega.js","./Ship":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Ship.js","./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
 
 //# sourceMappingURL=main.js.map

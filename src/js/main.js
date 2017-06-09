@@ -3,7 +3,6 @@ import MyCircle from "./MyCircle";
 import Ship from "./Ship";
 import Omega from "./Omega";
 import OmegaEngine from "./lib/OmegaEngine";
-import Keys from "./Keys";
 import Controls from "./lib/Controls";
 import Vector from "./lib/Vector";
 
