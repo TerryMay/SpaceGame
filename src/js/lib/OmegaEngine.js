@@ -9,7 +9,7 @@ class OmegaEngine {
     this.turningRight = false;
     this.thrusting = false;
     this.thrustObserver = null;
-    this.impluse = 100;
+    this.impluse = 15;
     this.impluseEngine = null;
   }
 

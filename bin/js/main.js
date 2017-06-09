@@ -27883,7 +27883,7 @@ var OmegaEngine = function () {
     this.turningRight = false;
     this.thrusting = false;
     this.thrustObserver = null;
-    this.impluse = 100;
+    this.impluse = 15;
     this.impluseEngine = null;
   }
 
@@ -28130,61 +28130,75 @@ function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj;
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 document.addEventListener("DOMContentLoaded", function () {
-	// Create a game class and start its animation
-	var game = new Game();
-	game.animate();
+		// Create a game class and start its animation
+		var game = new Game();
+		game.animate();
 
-	// Expose the game instance to global scope (optional)
-	window.game = game;
+		// Expose the game instance to global scope (optional)
+		window.game = game;
 });
 
 var Game = function () {
-	function Game() {
-		_classCallCheck(this, Game);
+		function Game() {
+				_classCallCheck(this, Game);
 
-		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
-		// if you want to force WebGL
-		this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
-		// Set an ID for some simple css styling
-		this.renderer.view.id = "pixi";
-		document.body.appendChild(this.renderer.view);
+				// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
+				// if you want to force WebGL
+				this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
+				// Set an ID for some simple css styling
+				this.renderer.view.id = "pixi";
+				document.body.appendChild(this.renderer.view);
 
-		// Pixelated scaling (optional)
-		PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
+				// Pixelated scaling (optional)
+				PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
 
-		this.controls = new _Controls2.default();
-		this.controls.getFireObservable().subscribe(function (fire) {
-			return console.log(fire);
-		});
+				this.controls = new _Controls2.default();
+				this.controls.getFireObservable().subscribe(function (fire) {
+						return console.log(fire);
+				});
 
-		// Base container
-		this.stage = new PIXI.Container();
-		console.log(this.stage.width);
-		//this.ship = new Ship(this.container.width/2, this.container.height/2);
-		//this.ship.addControls(this.controls.getControlsObservble());
-		//this.container.addChild(this.ship);
-		this.omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, new _OmegaEngine2.default());
-		this.omega.setControls(this.controls.getObservable());
-		this.stage.addChild(this.omega);
-		// Set anchor to the middle
-		//this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
-	}
-
-	_createClass(Game, [{
-		key: "animate",
-		value: function animate() {
-			// Render the scene
-			this.renderer.render(this.stage);
-			this.omega.update();
-			// Request to render at next browser redraw
-			requestAnimationFrame(this.animate.bind(this));
+				// Base container
+				this.stage = new PIXI.Container();
+				console.log(this.stage.width);
+				//this.ship = new Ship(this.container.width/2, this.container.height/2);
+				//this.ship.addControls(this.controls.getControlsObservble());
+				//this.container.addChild(this.ship);
+				this.omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, new _OmegaEngine2.default());
+				this.omega.setControls(this.controls.getObservable());
+				this.stage.addChild(this.omega);
+				// Set anchor to the middle
+				//this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
 		}
-	}, {
-		key: "getVectorFromDirection",
-		value: function getVectorFromDirection(direction) {}
-	}]);
 
-	return Game;
+		_createClass(Game, [{
+				key: "animate",
+				value: function animate() {
+						// Render the scene
+						this.renderer.render(this.stage);
+						this.omega.update();
+
+						//simple wrapping for testing
+						if (this.omega.x > window.innerWidth) {
+								this.omega.x = 0;
+						} else if (this.omega.x < -1) {
+								this.omega.x = window.innerWidth;
+						}
+
+						if (this.omega.y > window.innerHeight) {
+								this.omega.y = 0;
+						} else if (this.omega.y < -1) {
+								this.omega.y = window.innerHeight;
+						}
+
+						// Request to render at next browser redraw
+						requestAnimationFrame(this.animate.bind(this));
+				}
+		}, {
+				key: "getVectorFromDirection",
+				value: function getVectorFromDirection(direction) {}
+		}]);
+
+		return Game;
 }();
 
 },{"./MyCircle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js","./Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Omega.js","./Ship":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Ship.js","./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])

@@ -51,6 +51,20 @@ class Game {
 		// Render the scene
 		this.renderer.render(this.stage);
     this.omega.update();
+
+    //simple wrapping for testing
+    if (this.omega.x > window.innerWidth) {
+      this.omega.x = 0;
+    } else if ( this.omega.x < -1) {
+      this.omega.x = window.innerWidth;
+    }
+
+    if (this.omega.y > window.innerHeight) {
+      this.omega.y = 0;
+    } else if (this.omega.y < -1) {
+      this. omega.y = window.innerHeight;
+    }
+
 		// Request to render at next browser redraw
 		requestAnimationFrame(this.animate.bind(this));
 	}
