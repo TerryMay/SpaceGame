@@ -1,7 +1,5 @@
 import * as PIXI from "pixi.js";
-import MyCircle from "./MyCircle";
-import Ship from "./Ship";
-import Omega from "./Omega";
+import Omega from "./lib/Omega";
 import OmegaEngine from "./lib/OmegaEngine";
 import Controls from "./lib/Controls";
 import Vector from "./lib/Vector";
@@ -36,15 +34,11 @@ class Game {
 
 		// Base container
 		this.stage = new PIXI.Container();
-    console.log(this.stage.width)
-    //this.ship = new Ship(this.container.width/2, this.container.height/2);
-    //this.ship.addControls(this.controls.getControlsObservble());
-    //this.container.addChild(this.ship);
+
+    // make a ship with a base engine
     this.omega = new Omega(window.innerWidth / 2, window.innerHeight / 2, new OmegaEngine());
     this.omega.setControls(this.controls.getObservable());
     this.stage.addChild(this.omega);
-		// Set anchor to the middle
-		//this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
 	}
 
 	animate() {

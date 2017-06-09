@@ -27394,48 +27394,7 @@ module.exports = function () {
     };
 };
 
-},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js":[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-var _pixi = require("pixi.js");
-
-var PIXI = _interopRequireWildcard(_pixi);
-
-function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
-
-function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
-
-var MyCicle = function (_PIXI$Container) {
-  _inherits(MyCicle, _PIXI$Container);
-
-  function MyCicle() {
-    _classCallCheck(this, MyCicle);
-
-    var _this = _possibleConstructorReturn(this, (MyCicle.__proto__ || Object.getPrototypeOf(MyCicle)).call(this));
-
-    var graphics = new PIXI.Graphics();
-    graphics.x = window.innerWidth / 2;
-    graphics.y = window.innerHeight / 2;
-    graphics.beginFill(0xFFFFFF, 1);
-    graphics.drawCircle(100, 100, 100);
-    _this.addChild(graphics);
-    return _this;
-  }
-
-  return MyCicle;
-}(PIXI.Container);
-
-exports.default = MyCicle;
-
-},{"pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Omega.js":[function(require,module,exports){
+},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicTriangle.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27448,13 +27407,9 @@ var _pixi = require("pixi.js");
 
 var PIXI = _interopRequireWildcard(_pixi);
 
-var _Vector = require("./lib/Vector");
+var _Omega = require("./Omega");
 
-var _Vector2 = _interopRequireDefault(_Vector);
-
-var _Controls = require("./lib/Controls");
-
-var _Controls2 = _interopRequireDefault(_Controls);
+var _Omega2 = _interopRequireDefault(_Omega);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -27466,247 +27421,57 @@ function _possibleConstructorReturn(self, call) { if (!self) { throw new Referen
 
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
-var Omega = function (_PIXI$Sprite) {
-  _inherits(Omega, _PIXI$Sprite);
+var BasicTriangle = function (_PIXI$Graphics) {
+  _inherits(BasicTriangle, _PIXI$Graphics);
 
-  _createClass(Omega, null, [{
-    key: "HULL_STATE",
-    get: function get() {
-      return {
-        CLEAN: 'clean',
-        THRUSTING: 'thrusting'
-      };
-    }
-  }]);
+  function BasicTriangle() {
+    _classCallCheck(this, BasicTriangle);
 
-  function Omega() {
-    var x = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
-    var y = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
-    var engine = arguments[2];
+    var _this = _possibleConstructorReturn(this, (BasicTriangle.__proto__ || Object.getPrototypeOf(BasicTriangle)).call(this));
 
-    _classCallCheck(this, Omega);
-
-    var _this = _possibleConstructorReturn(this, (Omega.__proto__ || Object.getPrototypeOf(Omega)).call(this));
-
-    _this.enabled = false;
-    _this.position = new _Vector2.default(x, y);
-    _this.velocity = new _Vector2.default(0, 0);
-    _this.velocity.setLength(0);
-    _this.velocity.setAngle(0);
-    _this.angle = 0;
-    _this.engine = engine;
-    _this.pivot = new PIXI.Point(25, 25);
-    _this.anchor.set(0.5, 0.5);
-    _this.hull = new PIXI.Graphics();
-    _this.hullIsDirty = true;
-    _this.addChild(_this.hull);
+    _this.thrustOrigin = new PIXI.Point(0, 25);
+    _this.thrustRenderer = _this.getBasicThrust;
     return _this;
   }
 
-  _createClass(Omega, [{
-    key: "setControls",
-    value: function setControls(controlsObservable) {
-      var _this2 = this;
-
-      this.engine.getThrustEmitter(controlsObservable).subscribe(function (thrustVector) {
-        _this2.velocity.addTo(thrustVector);
-        _this2.angle = _this2.engine.getAngle();
-      });
+  _createClass(BasicTriangle, [{
+    key: "setThrustRenderer",
+    value: function setThrustRenderer(thrustGraphic) {
+      this.thrustRenderer = thrustGraphic;
     }
   }, {
-    key: "update",
-    value: function update() {
-      this.position.addTo(this.velocity);
-      this.x = this.position.getX();
-      this.y = this.position.getY();
-      this.rotation = this.angle;
-      if (this.engine.thrusting) {
-        this.hullIsDirty = true;
-        this.renderHull(Omega.HULL_STATE.THRUSTING);
-      } else if (this.hullIsDirty) {
-        this.renderHull(Omega.HULL_STATE.CLEAN);
-        this.hullIsDirty = false;
+    key: "render",
+    value: function render(state) {
+      this.clear();
+      switch (state) {
+        case _Omega2.default.HULL_STATE.THRUSTING:
+          this.addChild(this.thrustRenderer());
+        case _Omega2.default.HULL_STATE.CLEAN:
+          this.lineStyle(2, 0xFFFFFF, 1);
+          this.moveTo(0, 0);
+          this.lineTo(50, 25);
+          this.lineTo(0, 50);
+          this.lineTo(0, 0);
+          break;
       }
     }
   }, {
-    key: "renderHull",
-    value: function renderHull(state) {
-      if (this.hullIsDirty) {
-        this.hull.clear();
-        switch (state) {
-          case Omega.HULL_STATE.THRUSTING:
-            this.hull.lineStyle(8, 0xFFFFFF, 1);
-            this.hull.moveTo(0, 25);
-            this.hull.lineTo(-(Math.random() * 25), 25);
-          case Omega.HULL_STATE.CLEAN:
-            this.hull.lineStyle(2, 0xFFFFFF, 1);
-            this.hull.moveTo(0, 0);
-            this.hull.lineTo(50, 25);
-            this.hull.lineTo(0, 50);
-            this.hull.lineTo(0, 0);
-            break;
-        }
-      }
+    key: "getBasicThrust",
+    value: function getBasicThrust() {
+      var t = new PIXI.Graphics();
+      this.lineStyle(8, 0xFFFFFF, 1);
+      this.moveTo(this.thrustOrigin.x, this.thrustOrigin.y);
+      this.lineTo(-(Math.random() * 25), 25);
+      return t;
     }
   }]);
 
-  return Omega;
-}(PIXI.Sprite);
+  return BasicTriangle;
+}(PIXI.Graphics);
 
-exports.default = Omega;
+exports.default = BasicTriangle;
 
-},{"./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Ship.js":[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _get = function get(object, property, receiver) { if (object === null) object = Function.prototype; var desc = Object.getOwnPropertyDescriptor(object, property); if (desc === undefined) { var parent = Object.getPrototypeOf(object); if (parent === null) { return undefined; } else { return get(parent, property, receiver); } } else if ("value" in desc) { return desc.value; } else { var getter = desc.get; if (getter === undefined) { return undefined; } return getter.call(receiver); } };
-
-var _pixi = require("pixi.js");
-
-var PIXI = _interopRequireWildcard(_pixi);
-
-var _Vector = require("./lib/Vector");
-
-var _Vector2 = _interopRequireDefault(_Vector);
-
-var _Controls = require("./lib/Controls");
-
-var _Controls2 = _interopRequireDefault(_Controls);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
-
-function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
-
-var Ship = function (_PIXI$DisplayObject) {
-  _inherits(Ship, _PIXI$DisplayObject);
-
-  function Ship() {
-    var x = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
-    var y = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
-    var speed = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 0;
-    var direction = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
-
-    _classCallCheck(this, Ship);
-
-    var _this = _possibleConstructorReturn(this, (Ship.__proto__ || Object.getPrototypeOf(Ship)).call(this));
-
-    _this.position = new _Vector2.default(x, y);
-    _this.position.setAngle(0);
-    _this.velocity = new _Vector2.default(0, 0);
-    _this.velocity.setLength(speed);
-    _this.velocity.setAngle(direction);
-
-    _this.graphics = new PIXI.Graphics();
-    _this.pivot = new PIXI.Point(15, 15);
-    // this.addChild(this.graphics);
-    _this.position.addTo(_this.velocity);
-    _this.x = _this.position.getX();
-    _this.y = _this.position.getY();
-    _this.rotation += _this.position.getAngle();
-    return _this;
-  }
-
-  _createClass(Ship, [{
-    key: "renderCanvas",
-    value: function renderCanvas(renderer) {
-      _get(Ship.prototype.__proto__ || Object.getPrototypeOf(Ship.prototype), "renderCanvas", this).call(this, renderer);
-    }
-  }, {
-    key: "addControls",
-    value: function addControls(controlsObservable) {
-      var _this2 = this;
-
-      controlsObservable.selectMany(function (direction) {
-        var thrust = new _Vector2.default(_this2.position.getX(), _this2.position.getY());
-        thrust.setLength(0);
-        thrust.setAngle(0);
-        switch (direction) {
-          case _Controls2.default.KEY.UP_DOWN:
-            thrust.setLength(0.1);
-            break;
-          case _Controls2.default.KEY.UP_UP:
-            //thrust.setLength(0);
-            break;
-          case _Controls2.default.KEY.DOWN_UP:
-
-            break;
-          case _Controls2.default.KEY.DOWN_DOWN:
-            thrust.setLength(0);
-            break;
-          case _Controls2.default.KEY.LEFT_UP:
-            break;
-          case _Controls2.default.KEY.LEFT_DOWN:
-            thrust.setAngle(-0.05);
-            break;
-          case _Controls2.default.KEY.RIGHT_UP:
-            break;
-          case _Controls2.default.KEY.RIGHT_DOWN:
-            thrust.setAngle(0.05);
-            break;
-          case _Controls2.default.KEY.FIRE_DOWN:
-            break;
-          case _Controls2.default.KEY.FIRE_UP:
-            break;
-        };
-        return Rx.Observable.of(thrust);
-      }).subscribe(function (vector) {
-        return _this2.addDirection(vector);
-      });
-    }
-  }, {
-    key: "update",
-    value: function update() {
-      this.position.addTo(this.velocity);
-      this.x = this.position.getX();
-      this.y = this.position.getY();
-      this.rotation += this.velocity.getAngle();
-      this.draw();
-    }
-  }, {
-    key: "draw",
-    value: function draw() {
-      this.graphics.beginFill(0xFFFFFF, 1);
-      this.path = [new PIXI.Point(0, -10), new PIXI.Point(-10, 10), new PIXI.Point(10, 10)];
-      this.graphics.drawRect(0, 0, 30, 30);
-      //this.graphics.drawPolygon(this.path);
-    }
-  }, {
-    key: "addDirection",
-    value: function addDirection(v2) {
-      this.velocity.addTo(v2);
-      this.velocity.setAngle(v2.getAngle());
-      console.log(this.velocity);
-      //this.update();
-    }
-  }, {
-    key: "getPosition",
-    value: function getPosition() {
-      return this.position;
-    }
-  }, {
-    key: "getDirection",
-    value: function getDirection() {
-      return this.direction;
-    }
-  }]);
-
-  return Ship;
-}(PIXI.DisplayObject);
-
-exports.default = Ship;
-
-},{"./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js":[function(require,module,exports){
+},{"./Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Omega.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27852,7 +27617,7 @@ var Controls = function () {
 
 exports.default = Controls;
 
-},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js":[function(require,module,exports){
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Omega.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27860,6 +27625,132 @@ Object.defineProperty(exports, "__esModule", {
 });
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _pixi = require("pixi.js");
+
+var PIXI = _interopRequireWildcard(_pixi);
+
+var _Vector = require("./Vector");
+
+var _Vector2 = _interopRequireDefault(_Vector);
+
+var _Controls = require("./Controls");
+
+var _Controls2 = _interopRequireDefault(_Controls);
+
+var _BasicTriangle = require("./BasicTriangle");
+
+var _BasicTriangle2 = _interopRequireDefault(_BasicTriangle);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var Omega = function (_PIXI$Sprite) {
+  _inherits(Omega, _PIXI$Sprite);
+
+  _createClass(Omega, null, [{
+    key: "HULL_STATE",
+    get: function get() {
+      return {
+        CLEAN: 'clean',
+        THRUSTING: 'thrusting'
+      };
+    }
+  }]);
+
+  function Omega() {
+    var x = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
+    var y = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+    var engine = arguments[2];
+
+    _classCallCheck(this, Omega);
+
+    var _this = _possibleConstructorReturn(this, (Omega.__proto__ || Object.getPrototypeOf(Omega)).call(this));
+
+    _this.enabled = false;
+    _this.position = new _Vector2.default(x, y);
+    _this.velocity = new _Vector2.default(0, 0);
+    _this.velocity.setLength(0);
+    _this.velocity.setAngle(0);
+    _this.angle = 0;
+    _this.pivot = new PIXI.Point(25, 25);
+    _this.anchor.set(0.5, 0.5);
+    _this.engine = engine;
+    _this.hull = new _BasicTriangle2.default();
+    _this.hullIsDirty = true;
+    _this.addChild(_this.hull);
+    return _this;
+  }
+
+  _createClass(Omega, [{
+    key: "setControls",
+    value: function setControls(controlsObservable) {
+      var _this2 = this;
+
+      this.engine.getThrustEmitter(controlsObservable).subscribe(function (thrustVector) {
+        _this2.velocity.addTo(thrustVector);
+        _this2.angle = _this2.engine.getAngle();
+      });
+    }
+  }, {
+    key: "setEngine",
+    value: function setEngine(engine) {
+      this.engine = engine;
+    }
+  }, {
+    key: "setHull",
+    value: function setHull(hull) {
+      this.hull = hull;
+    }
+  }, {
+    key: "update",
+    value: function update() {
+      this.position.addTo(this.velocity);
+      this.x = this.position.getX();
+      this.y = this.position.getY();
+      this.rotation = this.angle;
+      if (this.engine.thrusting) {
+        this.hullIsDirty = true;
+        this.renderHull(Omega.HULL_STATE.THRUSTING);
+      } else if (this.hullIsDirty) {
+        this.renderHull(Omega.HULL_STATE.CLEAN);
+        this.hullIsDirty = false;
+      }
+    }
+  }, {
+    key: "renderHull",
+    value: function renderHull(state) {
+      if (this.hullIsDirty) {
+        this.hull.setThrustRenderer(this.engine.getThrustRenderer);
+        this.hull.render(state);
+      }
+    }
+  }]);
+
+  return Omega;
+}(PIXI.Sprite);
+
+exports.default = Omega;
+
+},{"./BasicTriangle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicTriangle.js","./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js":[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _pixi = require("pixi.js");
+
+var PIXI = _interopRequireWildcard(_pixi);
 
 var _Vector = require("./Vector");
 
@@ -27870,6 +27761,8 @@ var _Controls = require("./Controls");
 var _Controls2 = _interopRequireDefault(_Controls);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
@@ -27911,7 +27804,6 @@ var OmegaEngine = function () {
       if (this.thrusting || this.turningLeft || this.turningRight) {
         if (this.impluseEngine === null) {
           this.impluseEngine = setInterval(function () {
-            console.log("*");
             _this2.thrustObserver.onNext(_this2.thrust);
             if (_this2.turningRight) {
               _this2.angle += .05;
@@ -27964,6 +27856,15 @@ var OmegaEngine = function () {
         _this3.emitEngineThrust();
       });
     }
+  }, {
+    key: "getThrustRenderer",
+    value: function getThrustRenderer() {
+      var t = new PIXI.Graphics();
+      this.lineStyle(8, 0xFF0000, 1);
+      this.moveTo(this.thrustOrigin.x, this.thrustOrigin.y);
+      this.lineTo(-(Math.random() * 25), 25);
+      return t;
+    }
   }]);
 
   return OmegaEngine;
@@ -27971,7 +27872,7 @@ var OmegaEngine = function () {
 
 exports.default = OmegaEngine;
 
-},{"./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js":[function(require,module,exports){
+},{"./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -28099,15 +28000,7 @@ var _pixi = require("pixi.js");
 
 var PIXI = _interopRequireWildcard(_pixi);
 
-var _MyCircle = require("./MyCircle");
-
-var _MyCircle2 = _interopRequireDefault(_MyCircle);
-
-var _Ship = require("./Ship");
-
-var _Ship2 = _interopRequireDefault(_Ship);
-
-var _Omega = require("./Omega");
+var _Omega = require("./lib/Omega");
 
 var _Omega2 = _interopRequireDefault(_Omega);
 
@@ -28159,15 +28052,11 @@ var Game = function () {
 
 				// Base container
 				this.stage = new PIXI.Container();
-				console.log(this.stage.width);
-				//this.ship = new Ship(this.container.width/2, this.container.height/2);
-				//this.ship.addControls(this.controls.getControlsObservble());
-				//this.container.addChild(this.ship);
+
+				// make a ship with a base engine
 				this.omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, new _OmegaEngine2.default());
 				this.omega.setControls(this.controls.getObservable());
 				this.stage.addChild(this.omega);
-				// Set anchor to the middle
-				//this.pixi.anchor.x = this.pixi.anchor.y = 0.5;
 		}
 
 		_createClass(Game, [{
@@ -28201,6 +28090,6 @@ var Game = function () {
 		return Game;
 }();
 
-},{"./MyCircle":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/MyCircle.js","./Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Omega.js","./Ship":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/Ship.js","./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
+},{"./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Omega.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
 
 //# sourceMappingURL=main.js.map

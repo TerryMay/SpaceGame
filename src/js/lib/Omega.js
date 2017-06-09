@@ -1,6 +1,7 @@
 import * as PIXI from "pixi.js";
-import Vector from "./lib/Vector";
-import Controls from "./lib/Controls";
+import Vector from "./Vector";
+import Controls from "./Controls";
+import TriangleHull from "./BasicTriangle";
 
 class Omega extends PIXI.Sprite {
   static get HULL_STATE() {
@@ -18,10 +19,10 @@ class Omega extends PIXI.Sprite {
     this.velocity.setLength(0);
     this.velocity.setAngle(0);
     this.angle = 0;
-    this.engine = engine;
     this.pivot = new PIXI.Point(25,25);
     this.anchor.set(0.5, 0.5);
-    this.hull = new PIXI.Graphics();
+    this.engine = engine;
+    this.hull = new TriangleHull();
     this.hullIsDirty = true;
     this.addChild(this.hull);
   }
@@ -32,6 +33,14 @@ class Omega extends PIXI.Sprite {
         this.velocity.addTo(thrustVector);
         this.angle = this.engine.getAngle();
       });
+  }
+
+  setEngine(engine) {
+    this.engine = engine;
+  }
+
+  setHull(hull) {
+    this.hull = hull;
   }
 
   update() {
@@ -50,20 +59,8 @@ class Omega extends PIXI.Sprite {
 
   renderHull(state) {
     if (this.hullIsDirty) {
-      this.hull.clear();
-      switch (state) {
-        case Omega.HULL_STATE.THRUSTING:
-          this.hull.lineStyle(8, 0xFFFFFF, 1);
-          this.hull.moveTo(0, 25);
-          this.hull.lineTo(-(Math.random()*25), 25);
-        case Omega.HULL_STATE.CLEAN:
-          this.hull.lineStyle(2, 0xFFFFFF, 1);
-          this.hull.moveTo(0, 0);
-          this.hull.lineTo(50,25);
-          this.hull.lineTo(0,50);
-          this.hull.lineTo(0,0)
-          break;
-      }
+      this.hull.setThrustRenderer(this.engine.getThrustRenderer);
+      this.hull.render(state);
     }
   }
 }

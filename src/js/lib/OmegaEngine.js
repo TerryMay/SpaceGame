@@ -1,3 +1,4 @@
+import * as PIXI from "pixi.js";
 import Vector from "./Vector";
 import Controls from "./Controls";
 
@@ -29,7 +30,6 @@ class OmegaEngine {
     if (this.thrusting || this.turningLeft || this.turningRight) {
       if (this.impluseEngine === null) {
         this.impluseEngine = setInterval(() => {
-          console.log("*");
           this.thrustObserver.onNext(this.thrust);
           if (this.turningRight) {
             this.angle += .05;
@@ -79,6 +79,14 @@ class OmegaEngine {
         this.thrust.setAngle(this.angle);
         this.emitEngineThrust();
     });
+  }
+
+  getThrustRenderer() {
+    let t = new PIXI.Graphics();
+    this.lineStyle(8, 0xFF0000, 1);
+    this.moveTo(this.thrustOrigin.x, this.thrustOrigin.y);
+    this.lineTo(-(Math.random()*25), 25);
+    return t;
   }
 }
 
