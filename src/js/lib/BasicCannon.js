@@ -29,6 +29,7 @@ class BasicCannon {
   update(velocity) {
     console.log("update");
     this.position.addTo(velocity);
+
   }
 
   getBallisticsRenderer() {
