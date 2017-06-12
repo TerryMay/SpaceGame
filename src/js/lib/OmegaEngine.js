@@ -14,6 +14,10 @@ class OmegaEngine {
     this.impluseEngine = null;
   }
 
+  setThrustOrigin(thurstOrigin) {
+    this.thrustOrigin = thurstOrigin;
+  }
+
   getAngle() {
     return this.angle;
   }
@@ -72,7 +76,7 @@ class OmegaEngine {
             break;
         }
         if (this.thrusting) {
-          this.thrust.setLength(.051);
+          this.thrust.setLength(.1);
         } else {
           this.thrust.setLength(0);
         }
@@ -81,11 +85,16 @@ class OmegaEngine {
     });
   }
 
-  getThrustRenderer() {
+  getThrustRenderer(thrustOrigin) {
     let t = new PIXI.Graphics();
-    this.lineStyle(8, 0xFF0000, 1);
-    this.moveTo(this.thrustOrigin.x, this.thrustOrigin.y);
-    this.lineTo(-(Math.random()*25), 25);
+    const top = thrustOrigin.y - 10;
+    const bottom = thrustOrigin.y + 10;
+    const thrustMax = thrustOrigin.x - (Math.random()*25) + 1;
+    this.lineStyle(1, 0xFFFFFF, 1);
+    this.moveTo(thrustOrigin.x, top);
+    this.lineTo(thrustOrigin.x, bottom);
+    this.lineTo(thrustMax, thrustOrigin.y);
+    this.lineTo(thrustOrigin.x, top);
     return t;
   }
 }

@@ -11,9 +11,10 @@ class Omega extends PIXI.Sprite {
     };
   };
 
-  constructor(x = 0, y = 0, engine) {
+  constructor(x = 0, y = 0, controls, engine) {
     super();
     this.enabled = false;
+    this.controls = null;
     this.position = new Vector(x,y);
     this.velocity = new Vector(0,0);
     this.velocity.setLength(0);
@@ -25,14 +26,32 @@ class Omega extends PIXI.Sprite {
     this.hull = new TriangleHull();
     this.hullIsDirty = true;
     this.addChild(this.hull);
+    this.setControls(controls);
   }
 
-  setControls(controlsObservable) {
-    this.engine.getThrustEmitter(controlsObservable)
+  setControls(controls) {
+    this.controls = controls;
+    this.engine.getThrustEmitter(this.controls.getObservable())
       .subscribe((thrustVector) => {
         this.velocity.addTo(thrustVector);
         this.angle = this.engine.getAngle();
       });
+  }
+
+  setWeapon(weapon) {
+    this.weapon = weapon;
+    return weapon.getFireEmitter(this.controls)
+      .flatMap((projectile) => {
+        return Rx.Observable.of(projectile);
+      });
+  }
+
+  getWeaponObservable(controls) {
+    if (this.weapon !== null) {
+      return this.weapon.getFireEmitter(controls);
+    } else {
+      return null;
+    }
   }
 
   setEngine(engine) {

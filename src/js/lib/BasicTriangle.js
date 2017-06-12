@@ -16,7 +16,7 @@ class BasicTriangle extends PIXI.Graphics {
     this.clear();
     switch (state) {
       case Omega.HULL_STATE.THRUSTING:
-        this.addChild(this.thrustRenderer());
+        this.addChild(this.thrustRenderer(this.thrustOrigin));
       case Omega.HULL_STATE.CLEAN:
         this.lineStyle(2, 0xFFFFFF, 1);
         this.moveTo(0, 0);
@@ -28,11 +28,10 @@ class BasicTriangle extends PIXI.Graphics {
   }
 
   getBasicThrust() {
-    let t = new PIXI.Graphics();
     this.lineStyle(8, 0xFFFFFF, 1);
     this.moveTo(this.thrustOrigin.x, this.thrustOrigin.y);
     this.lineTo(-(Math.random()*25), 25);
-    return t;
+    return this;
   }
 }
 

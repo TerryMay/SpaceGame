@@ -27394,7 +27394,83 @@ module.exports = function () {
     };
 };
 
-},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicTriangle.js":[function(require,module,exports){
+},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicCannon.js":[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _pixi = require("pixi.js");
+
+var PIXI = _interopRequireWildcard(_pixi);
+
+var _Vector = require("./Vector");
+
+var _Vector2 = _interopRequireDefault(_Vector);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var BasicCannon = function () {
+  function BasicCannon() {
+    _classCallCheck(this, BasicCannon);
+
+    this.position = new _Vector2.default(0, 0);
+    this.velocity = new _Vector2.default(0, 0);
+    this.velocity.setLength(0);
+    this.velocity.setAngle(0);
+    this.angle = 0;
+  }
+
+  _createClass(BasicCannon, [{
+    key: "getFireEmitter",
+    value: function getFireEmitter(controls) {
+      var _this = this;
+
+      return controls.getFireObservable().flatMap(function (input) {
+        if (input === 9) {
+          return Rx.Observable.of(_this.getBallisticsRenderer());
+        } else {
+          return Rx.Observable.of(null);
+        }
+      });
+      // this.position.setX(origin.getX() + Math.cos(origin.getAngle() * 40));
+      // this.position.setY(origin.getY() + Math.sin(origin.getAngle() * 40));
+      // this.position.setAngle(origin.getAngle());
+      // this.position.setLength(15);
+    }
+  }, {
+    key: "update",
+    value: function update(velocity) {
+      console.log("update");
+      this.position.addTo(velocity);
+    }
+  }, {
+    key: "getBallisticsRenderer",
+    value: function getBallisticsRenderer() {
+      var projectile = new PIXI.Graphics();
+      projectile.beginFill(0xFFFFFF);
+      projectile.drawCircle(0, 0, 6);
+      projectile.endFill();
+      var container = new PIXI.Sprite();
+      container.anchor.set(.5, .5);
+      container.addChild(projectile);
+      return container;
+    }
+  }]);
+
+  return BasicCannon;
+}();
+
+exports.default = BasicCannon;
+
+},{"./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicTriangle.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27445,7 +27521,7 @@ var BasicTriangle = function (_PIXI$Graphics) {
       this.clear();
       switch (state) {
         case _Omega2.default.HULL_STATE.THRUSTING:
-          this.addChild(this.thrustRenderer());
+          this.addChild(this.thrustRenderer(this.thrustOrigin));
         case _Omega2.default.HULL_STATE.CLEAN:
           this.lineStyle(2, 0xFFFFFF, 1);
           this.moveTo(0, 0);
@@ -27458,11 +27534,10 @@ var BasicTriangle = function (_PIXI$Graphics) {
   }, {
     key: "getBasicThrust",
     value: function getBasicThrust() {
-      var t = new PIXI.Graphics();
       this.lineStyle(8, 0xFFFFFF, 1);
       this.moveTo(this.thrustOrigin.x, this.thrustOrigin.y);
       this.lineTo(-(Math.random() * 25), 25);
-      return t;
+      return this;
     }
   }]);
 
@@ -27668,13 +27743,15 @@ var Omega = function (_PIXI$Sprite) {
   function Omega() {
     var x = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
     var y = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
-    var engine = arguments[2];
+    var controls = arguments[2];
+    var engine = arguments[3];
 
     _classCallCheck(this, Omega);
 
     var _this = _possibleConstructorReturn(this, (Omega.__proto__ || Object.getPrototypeOf(Omega)).call(this));
 
     _this.enabled = false;
+    _this.controls = null;
     _this.position = new _Vector2.default(x, y);
     _this.velocity = new _Vector2.default(0, 0);
     _this.velocity.setLength(0);
@@ -27686,18 +27763,37 @@ var Omega = function (_PIXI$Sprite) {
     _this.hull = new _BasicTriangle2.default();
     _this.hullIsDirty = true;
     _this.addChild(_this.hull);
+    _this.setControls(controls);
     return _this;
   }
 
   _createClass(Omega, [{
     key: "setControls",
-    value: function setControls(controlsObservable) {
+    value: function setControls(controls) {
       var _this2 = this;
 
-      this.engine.getThrustEmitter(controlsObservable).subscribe(function (thrustVector) {
+      this.controls = controls;
+      this.engine.getThrustEmitter(this.controls.getObservable()).subscribe(function (thrustVector) {
         _this2.velocity.addTo(thrustVector);
         _this2.angle = _this2.engine.getAngle();
       });
+    }
+  }, {
+    key: "setWeapon",
+    value: function setWeapon(weapon) {
+      this.weapon = weapon;
+      return weapon.getFireEmitter(this.controls).flatMap(function (projectile) {
+        return Rx.Observable.of(projectile);
+      });
+    }
+  }, {
+    key: "getWeaponObservable",
+    value: function getWeaponObservable(controls) {
+      if (this.weapon !== null) {
+        return this.weapon.getFireEmitter(controls);
+      } else {
+        return null;
+      }
     }
   }, {
     key: "setEngine",
@@ -27781,6 +27877,11 @@ var OmegaEngine = function () {
   }
 
   _createClass(OmegaEngine, [{
+    key: "setThrustOrigin",
+    value: function setThrustOrigin(thurstOrigin) {
+      this.thrustOrigin = thurstOrigin;
+    }
+  }, {
     key: "getAngle",
     value: function getAngle() {
       return this.angle;
@@ -27848,7 +27949,7 @@ var OmegaEngine = function () {
             break;
         }
         if (_this3.thrusting) {
-          _this3.thrust.setLength(.051);
+          _this3.thrust.setLength(.1);
         } else {
           _this3.thrust.setLength(0);
         }
@@ -27858,11 +27959,16 @@ var OmegaEngine = function () {
     }
   }, {
     key: "getThrustRenderer",
-    value: function getThrustRenderer() {
+    value: function getThrustRenderer(thrustOrigin) {
       var t = new PIXI.Graphics();
-      this.lineStyle(8, 0xFF0000, 1);
-      this.moveTo(this.thrustOrigin.x, this.thrustOrigin.y);
-      this.lineTo(-(Math.random() * 25), 25);
+      var top = thrustOrigin.y - 10;
+      var bottom = thrustOrigin.y + 10;
+      var thrustMax = thrustOrigin.x - Math.random() * 25 + 1;
+      this.lineStyle(1, 0xFFFFFF, 1);
+      this.moveTo(thrustOrigin.x, top);
+      this.lineTo(thrustOrigin.x, bottom);
+      this.lineTo(thrustMax, thrustOrigin.y);
+      this.lineTo(thrustOrigin.x, top);
       return t;
     }
   }]);
@@ -28008,6 +28114,10 @@ var _OmegaEngine = require("./lib/OmegaEngine");
 
 var _OmegaEngine2 = _interopRequireDefault(_OmegaEngine);
 
+var _BasicCannon = require("./lib/BasicCannon");
+
+var _BasicCannon2 = _interopRequireDefault(_BasicCannon);
+
 var _Controls = require("./lib/Controls");
 
 var _Controls2 = _interopRequireDefault(_Controls);
@@ -28023,73 +28133,76 @@ function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj;
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 document.addEventListener("DOMContentLoaded", function () {
-		// Create a game class and start its animation
-		var game = new Game();
-		game.animate();
-
-		// Expose the game instance to global scope (optional)
-		window.game = game;
+  // Create a game class and start its animation
+  var game = new Game();
+  game.animate();
+  // Expose the game instance to global scope (optional)
+  window.game = game;
 });
 
 var Game = function () {
-		function Game() {
-				_classCallCheck(this, Game);
+  function Game() {
+    var _this = this;
 
-				// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
-				// if you want to force WebGL
-				this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
-				// Set an ID for some simple css styling
-				this.renderer.view.id = "pixi";
-				document.body.appendChild(this.renderer.view);
+    _classCallCheck(this, Game);
 
-				// Pixelated scaling (optional)
-				PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
+    this.ballisticsArray = [];
+    // Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
+    // if you want to force WebGL
+    this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
+    // Set an ID for some simple css styling
+    this.renderer.view.id = "pixi";
+    document.body.appendChild(this.renderer.view);
 
-				this.controls = new _Controls2.default();
-				this.controls.getFireObservable().subscribe(function (fire) {
-						return console.log(fire);
-				});
+    // Pixelated scaling (optional)
+    PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST;
 
-				// Base container
-				this.stage = new PIXI.Container();
+    this.controls = new _Controls2.default();
 
-				// make a ship with a base engine
-				this.omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, new _OmegaEngine2.default());
-				this.omega.setControls(this.controls.getObservable());
-				this.stage.addChild(this.omega);
-		}
+    // Base container
+    this.stage = new PIXI.Container();
 
-		_createClass(Game, [{
-				key: "animate",
-				value: function animate() {
-						// Render the scene
-						this.renderer.render(this.stage);
-						this.omega.update();
+    // make a ship with a base engine
+    this.omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, this.controls, new _OmegaEngine2.default());
 
-						//simple wrapping for testing
-						if (this.omega.x > window.innerWidth) {
-								this.omega.x = 0;
-						} else if (this.omega.x < -1) {
-								this.omega.x = window.innerWidth;
-						}
+    this.omega.setWeapon(new _BasicCannon2.default()).subscribe(function (projectile) {
+      return _this.ballisticsArray.push(projectile);
+    });
 
-						if (this.omega.y > window.innerHeight) {
-								this.omega.y = 0;
-						} else if (this.omega.y < -1) {
-								this.omega.y = window.innerHeight;
-						}
+    this.stage.addChild(this.omega);
+  }
 
-						// Request to render at next browser redraw
-						requestAnimationFrame(this.animate.bind(this));
-				}
-		}, {
-				key: "getVectorFromDirection",
-				value: function getVectorFromDirection(direction) {}
-		}]);
+  _createClass(Game, [{
+    key: "animate",
+    value: function animate() {
+      // Render the scene
+      this.renderer.render(this.stage);
+      this.omega.update();
 
-		return Game;
+      //simple wrapping for testing
+      if (this.omega.x > window.innerWidth) {
+        this.omega.x = 0;
+      } else if (this.omega.x < -1) {
+        this.omega.x = window.innerWidth;
+      }
+
+      if (this.omega.y > window.innerHeight) {
+        this.omega.y = 0;
+      } else if (this.omega.y < -1) {
+        this.omega.y = window.innerHeight;
+      }
+
+      // Request to render at next browser redraw
+      requestAnimationFrame(this.animate.bind(this));
+    }
+  }, {
+    key: "getVectorFromDirection",
+    value: function getVectorFromDirection(direction) {}
+  }]);
+
+  return Game;
 }();
 
-},{"./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Omega.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
+},{"./lib/BasicCannon":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicCannon.js","./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Omega.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
 
 //# sourceMappingURL=main.js.map
