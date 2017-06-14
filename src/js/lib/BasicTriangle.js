@@ -5,6 +5,7 @@ class BasicTriangle extends PIXI.Graphics {
   constructor() {
     super();
     this.thrustOrigin = new PIXI.Point(0, 25);
+    this.weaponOrigin = new PIXI.Point(50,25);
     this.thrustRenderer = this.getBasicThrust;
   }
 
@@ -12,6 +13,10 @@ class BasicTriangle extends PIXI.Graphics {
     this.thrustRenderer = thrustGraphic;
   }
 
+  getWeaponOrigin() {
+    return this.weaponOrigin;
+  }
+  
   render(state) {
     this.clear();
     switch (state) {

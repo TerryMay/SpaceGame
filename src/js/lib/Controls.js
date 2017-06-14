@@ -42,18 +42,22 @@ class Controls {
     });
   }
 
-  getFireObservable() {
+  getFireDownObservable() {
     return Rx.Observable.create(observer => {
       this.fire.press = () => observer.onNext(Controls.KEY.FIRE_DOWN);
+    });
+  }
+
+  getFireUpObservable() {
+    return Rx.Observable.create(observer => {
       this.fire.release = () => observer.onNext(Controls.KEY.FIRE_UP);
     });
   }
 
-  getObservable() {
+  getMovementObservable() {
     return Rx.Observable.merge(
       this.getKeyDownObservable(),
       this.getKeyUpObservable(),
-      this.getFireObservable(),
     );
   }
 

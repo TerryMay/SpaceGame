@@ -27394,7 +27394,104 @@ module.exports = function () {
     };
 };
 
-},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicCannon.js":[function(require,module,exports){
+},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BaseProjectile.js":[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _Vector = require("./Vector");
+
+var _Vector2 = _interopRequireDefault(_Vector);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var BaseProjectile = function () {
+  function BaseProjectile() {
+    var x = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
+    var y = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+    var speed = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 0;
+    var direction = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
+
+    _classCallCheck(this, BaseProjectile);
+
+    this.position = new _Vector2.default(x, y);
+    this.velocity = new _Vector2.default(0, 0);
+    this.velocity.setLength(speed);
+    this.velocity.setAngle(direction);
+    this.renderCache = null;
+    this.id = 0;
+  }
+
+  _createClass(BaseProjectile, [{
+    key: "setId",
+    value: function setId(id) {
+      this.id = id;
+    }
+  }, {
+    key: "getId",
+    value: function getId() {
+      return this.id;
+    }
+  }, {
+    key: "setPosition",
+    value: function setPosition() {
+      var x = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
+      var y = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+
+      this.position.setX(x);
+      this.position.setY(y);
+    }
+  }, {
+    key: "setVelocity",
+    value: function setVelocity() {
+      var speed = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
+      var direction = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+
+      this.velocity.setLength(speed);
+      this.velocity.setAngle(direction);
+    }
+  }, {
+    key: "accelerate",
+    value: function accelerate(accel) {
+      this.velocity.addTo(accel);
+    }
+  }, {
+    key: "update",
+    value: function update() {
+      this.position.addTo(this.velocity);
+      this.renderCache.x = this.position.getX();
+      this.renderCache.y = this.position.getY();
+    }
+  }, {
+    key: "getRenderer",
+    value: function getRenderer() {
+      //override me
+      if (this.renderCache === null) {
+        var projectile = new PIXI.Graphics();
+        projectile.beginFill(0xFFFFFF);
+        projectile.drawCircle(0, 0, 4);
+        projectile.endFill();
+        var container = new PIXI.Sprite();
+        container.anchor.set(.5, .5);
+        container.addChild(projectile);
+        this.renderCache = container;
+      }
+      return this.renderCache;
+    }
+  }]);
+
+  return BaseProjectile;
+}();
+
+exports.default = BaseProjectile;
+
+},{"./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicCannon.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27411,6 +27508,14 @@ var _Vector = require("./Vector");
 
 var _Vector2 = _interopRequireDefault(_Vector);
 
+var _Controls = require("./Controls");
+
+var _Controls2 = _interopRequireDefault(_Controls);
+
+var _BaseProjectile = require("./BaseProjectile");
+
+var _BaseProjectile2 = _interopRequireDefault(_BaseProjectile);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
@@ -27420,48 +27525,14 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
 var BasicCannon = function () {
   function BasicCannon() {
     _classCallCheck(this, BasicCannon);
-
-    this.position = new _Vector2.default(0, 0);
-    this.velocity = new _Vector2.default(0, 0);
-    this.velocity.setLength(0);
-    this.velocity.setAngle(0);
-    this.angle = 0;
   }
 
   _createClass(BasicCannon, [{
     key: "getFireEmitter",
-    value: function getFireEmitter(controls) {
-      var _this = this;
-
-      return controls.getFireObservable().flatMap(function (input) {
-        if (input === 9) {
-          return Rx.Observable.of(_this.getBallisticsRenderer());
-        } else {
-          return Rx.Observable.of(null);
-        }
+    value: function getFireEmitter(fireButtonObservable) {
+      return fireButtonObservable.flatMap(function (input) {
+        return Rx.Observable.of(new _BaseProjectile2.default());
       });
-      // this.position.setX(origin.getX() + Math.cos(origin.getAngle() * 40));
-      // this.position.setY(origin.getY() + Math.sin(origin.getAngle() * 40));
-      // this.position.setAngle(origin.getAngle());
-      // this.position.setLength(15);
-    }
-  }, {
-    key: "update",
-    value: function update(velocity) {
-      console.log("update");
-      this.position.addTo(velocity);
-    }
-  }, {
-    key: "getBallisticsRenderer",
-    value: function getBallisticsRenderer() {
-      var projectile = new PIXI.Graphics();
-      projectile.beginFill(0xFFFFFF);
-      projectile.drawCircle(0, 0, 6);
-      projectile.endFill();
-      var container = new PIXI.Sprite();
-      container.anchor.set(.5, .5);
-      container.addChild(projectile);
-      return container;
     }
   }]);
 
@@ -27470,7 +27541,7 @@ var BasicCannon = function () {
 
 exports.default = BasicCannon;
 
-},{"./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicTriangle.js":[function(require,module,exports){
+},{"./BaseProjectile":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BaseProjectile.js","./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicTriangle.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27506,6 +27577,7 @@ var BasicTriangle = function (_PIXI$Graphics) {
     var _this = _possibleConstructorReturn(this, (BasicTriangle.__proto__ || Object.getPrototypeOf(BasicTriangle)).call(this));
 
     _this.thrustOrigin = new PIXI.Point(0, 25);
+    _this.weaponOrigin = new PIXI.Point(50, 25);
     _this.thrustRenderer = _this.getBasicThrust;
     return _this;
   }
@@ -27514,6 +27586,11 @@ var BasicTriangle = function (_PIXI$Graphics) {
     key: "setThrustRenderer",
     value: function setThrustRenderer(thrustGraphic) {
       this.thrustRenderer = thrustGraphic;
+    }
+  }, {
+    key: "getWeaponOrigin",
+    value: function getWeaponOrigin() {
+      return this.weaponOrigin;
     }
   }, {
     key: "render",
@@ -27628,23 +27705,31 @@ var Controls = function () {
       });
     }
   }, {
-    key: "getFireObservable",
-    value: function getFireObservable() {
+    key: "getFireDownObservable",
+    value: function getFireDownObservable() {
       var _this3 = this;
 
       return Rx.Observable.create(function (observer) {
         _this3.fire.press = function () {
           return observer.onNext(Controls.KEY.FIRE_DOWN);
         };
-        _this3.fire.release = function () {
+      });
+    }
+  }, {
+    key: "getFireUpObservable",
+    value: function getFireUpObservable() {
+      var _this4 = this;
+
+      return Rx.Observable.create(function (observer) {
+        _this4.fire.release = function () {
           return observer.onNext(Controls.KEY.FIRE_UP);
         };
       });
     }
   }, {
-    key: "getObservable",
-    value: function getObservable() {
-      return Rx.Observable.merge(this.getKeyDownObservable(), this.getKeyUpObservable(), this.getFireObservable());
+    key: "getMovementObservable",
+    value: function getMovementObservable() {
+      return Rx.Observable.merge(this.getKeyDownObservable(), this.getKeyUpObservable());
     }
   }, {
     key: "keyboard",
@@ -27773,7 +27858,7 @@ var Omega = function (_PIXI$Sprite) {
       var _this2 = this;
 
       this.controls = controls;
-      this.engine.getThrustEmitter(this.controls.getObservable()).subscribe(function (thrustVector) {
+      this.engine.getThrustEmitter(this.controls.getMovementObservable()).subscribe(function (thrustVector) {
         _this2.velocity.addTo(thrustVector);
         _this2.angle = _this2.engine.getAngle();
       });
@@ -27781,8 +27866,12 @@ var Omega = function (_PIXI$Sprite) {
   }, {
     key: "setWeapon",
     value: function setWeapon(weapon) {
+      var _this3 = this;
+
       this.weapon = weapon;
-      return weapon.getFireEmitter(this.controls).flatMap(function (projectile) {
+      return weapon.getFireEmitter(this.controls.getFireUpObservable()).flatMap(function (projectile) {
+        projectile.setPosition(_this3.x, _this3.y);
+        projectile.setVelocity(15, _this3.angle);
         return Rx.Observable.of(projectile);
       });
     }
@@ -28139,6 +28228,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // Expose the game instance to global scope (optional)
   window.game = game;
 });
+var outerbound = 15;
 
 var Game = function () {
   function Game() {
@@ -28146,7 +28236,8 @@ var Game = function () {
 
     _classCallCheck(this, Game);
 
-    this.ballisticsArray = [];
+    this.ballisticsMap = {};
+    this.ballisticsCount = 0;
     // Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
     // if you want to force WebGL
     this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
@@ -28164,17 +28255,19 @@ var Game = function () {
 
     // make a ship with a base engine
     this.omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, this.controls, new _OmegaEngine2.default());
-
-    this.omega.setWeapon(new _BasicCannon2.default()).subscribe(function (projectile) {
-      return _this.ballisticsArray.push(projectile);
+    this.omega.setWeapon(new _BasicCannon2.default()).subscribe(function (ammo) {
+      if (ammo !== null) _this.stage.addChild(ammo.getRenderer());
+      ammo.setId(_this.ballisticsCount++);
+      _this.ballisticsMap[ammo.getId()] = ammo;
     });
-
     this.stage.addChild(this.omega);
   }
 
   _createClass(Game, [{
     key: "animate",
     value: function animate() {
+      var _this2 = this;
+
       // Render the scene
       this.renderer.render(this.stage);
       this.omega.update();
@@ -28192,12 +28285,38 @@ var Game = function () {
         this.omega.y = window.innerHeight;
       }
 
+      var ballisticsKeys = Object.keys(this.ballisticsMap);
+      if (ballisticsKeys.length > 0) {
+        ballisticsKeys.forEach(function (key) {
+          _this2.ballisticsMap[key].update();
+          if (!_this2.checkBounds(_this2.ballisticsMap[key].renderCache)) {
+            _this2.stage.removeChild(_this2.ballisticsMap[_this2.ballisticsMap[key]]);
+            delete _this2.ballisticsMap[_this2.ballisticsMap[key].getId()];
+          }
+        });
+        console.log(this.ballisticsMap + new Date().getTime());
+      }
+
       // Request to render at next browser redraw
       requestAnimationFrame(this.animate.bind(this));
     }
   }, {
-    key: "getVectorFromDirection",
-    value: function getVectorFromDirection(direction) {}
+    key: "checkBounds",
+    value: function checkBounds(sprite) {
+      //simple wrapping for testing
+      if (sprite.x > window.innerWidth + outerbound) {
+        return false;
+      } else if (sprite.x < -outerbound) {
+        return false;
+      }
+
+      if (sprite.y > window.innerHeight + outerbound) {
+        return false;
+      } else if (sprite.y < -outerbound) {
+        return false;
+      }
+      return true;
+    }
   }]);
 
   return Game;

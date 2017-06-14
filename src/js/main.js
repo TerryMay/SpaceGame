@@ -12,10 +12,12 @@ document.addEventListener("DOMContentLoaded", () => {
 	// Expose the game instance to global scope (optional)
 	window.game = game;
 });
+const outerbound = 15;
 
 class Game {
 	constructor() {
-    this.ballisticsArray = [];
+    this.ballisticsMap = {};
+    this.ballisticsCount = 0;
 		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
 		// if you want to force WebGL
 		this.renderer = PIXI.autoDetectRenderer(
@@ -40,10 +42,13 @@ class Game {
       window.innerHeight / 2,
       this.controls,
       new OmegaEngine());
-
     this.omega.setWeapon(new BasicCannon())
-      .subscribe((projectile) => this.ballisticsArray.push(projectile));
-
+      .subscribe((ammo) => {
+        if(ammo !== null)
+          this.stage.addChild(ammo.getRenderer());
+          ammo.setId(this.ballisticsCount++);
+          this.ballisticsMap[ammo.getId()] = ammo;
+      });
     this.stage.addChild(this.omega);
 	}
 
@@ -62,16 +67,39 @@ class Game {
     if (this.omega.y > window.innerHeight) {
       this.omega.y = 0;
     } else if (this.omega.y < -1) {
-      this. omega.y = window.innerHeight;
+      this.omega.y = window.innerHeight;
     }
 
+    let ballisticsKeys = Object.keys(this.ballisticsMap);
+    if (ballisticsKeys.length > 0) {
+      ballisticsKeys.forEach((key) => {
+        this.ballisticsMap[key].update();
+        if (!this.checkBounds(this.ballisticsMap[key].renderCache)) {
+          this.stage.removeChild(this.ballisticsMap[this.ballisticsMap[key]]);
+          delete this.ballisticsMap[this.ballisticsMap[key].getId()];
+        }
+      });
+      console.log(this.ballisticsMap+new Date().getTime());
+    }
+   
     
-
 		// Request to render at next browser redraw
 		requestAnimationFrame(this.animate.bind(this));
 	}
 
-  getVectorFromDirection(direction) {
+  checkBounds(sprite) {
+    //simple wrapping for testing
+    if (sprite.x > window.innerWidth + outerbound) {
+      return false;
+    } else if ( sprite.x < -outerbound) {
+      return false;
+    }
 
+    if (sprite.y > window.innerHeight + outerbound) {
+      return false;
+    } else if (sprite.y < -outerbound) {
+      return false;
+    }
+    return true;
   }
 }

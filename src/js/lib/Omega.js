@@ -31,7 +31,7 @@ class Omega extends PIXI.Sprite {
 
   setControls(controls) {
     this.controls = controls;
-    this.engine.getThrustEmitter(this.controls.getObservable())
+    this.engine.getThrustEmitter(this.controls.getMovementObservable())
       .subscribe((thrustVector) => {
         this.velocity.addTo(thrustVector);
         this.angle = this.engine.getAngle();
@@ -40,8 +40,10 @@ class Omega extends PIXI.Sprite {
 
   setWeapon(weapon) {
     this.weapon = weapon;
-    return weapon.getFireEmitter(this.controls)
+    return weapon.getFireEmitter(this.controls.getFireUpObservable())
       .flatMap((projectile) => {
+        projectile.setPosition(this.x, this.y);
+        projectile.setVelocity(15, this.angle);
         return Rx.Observable.of(projectile);
       });
   }
