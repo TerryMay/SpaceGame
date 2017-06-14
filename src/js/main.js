@@ -12,7 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	// Expose the game instance to global scope (optional)
 	window.game = game;
 });
-const outerbound = 15;
+const outerbound = 25;
 
 class Game {
 	constructor() {
@@ -74,15 +74,13 @@ class Game {
     if (ballisticsKeys.length > 0) {
       ballisticsKeys.forEach((key) => {
         this.ballisticsMap[key].update();
-        if (!this.checkBounds(this.ballisticsMap[key].renderCache)) {
-          this.stage.removeChild(this.ballisticsMap[this.ballisticsMap[key]]);
+        if (!this.checkBounds(this.ballisticsMap[key].getRenderer())) {
+          this.stage.removeChild(this.ballisticsMap[key].getRenderer());
           delete this.ballisticsMap[this.ballisticsMap[key].getId()];
         }
       });
-      console.log(this.ballisticsMap+new Date().getTime());
     }
    
-    
 		// Request to render at next browser redraw
 		requestAnimationFrame(this.animate.bind(this));
 	}

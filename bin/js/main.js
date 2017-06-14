@@ -28228,7 +28228,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // Expose the game instance to global scope (optional)
   window.game = game;
 });
-var outerbound = 15;
+var outerbound = 25;
 
 var Game = function () {
   function Game() {
@@ -28289,12 +28289,11 @@ var Game = function () {
       if (ballisticsKeys.length > 0) {
         ballisticsKeys.forEach(function (key) {
           _this2.ballisticsMap[key].update();
-          if (!_this2.checkBounds(_this2.ballisticsMap[key].renderCache)) {
-            _this2.stage.removeChild(_this2.ballisticsMap[_this2.ballisticsMap[key]]);
+          if (!_this2.checkBounds(_this2.ballisticsMap[key].getRenderer())) {
+            _this2.stage.removeChild(_this2.ballisticsMap[key].getRenderer());
             delete _this2.ballisticsMap[_this2.ballisticsMap[key].getId()];
           }
         });
-        console.log(this.ballisticsMap + new Date().getTime());
       }
 
       // Request to render at next browser redraw
