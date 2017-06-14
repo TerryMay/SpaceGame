@@ -1,4 +1,5 @@
 import * as PIXI from "pixi.js";
+import Asteroid from "./lib/Asteroid"
 import Omega from "./lib/Omega";
 import OmegaEngine from "./lib/OmegaEngine";
 import BasicCannon from "./lib/BasicCannon";
@@ -35,6 +36,8 @@ class Game {
 
 		// Base container
 		this.stage = new PIXI.Container();
+    const a = new Asteroid(10, 100, 100, 0, 0);
+    this.stage.addChild(a.getRenderer());
 
     // make a ship with a base engine
     this.omega = new Omega(
@@ -56,6 +59,7 @@ class Game {
 		// Render the scene
 		this.renderer.render(this.stage);
     this.omega.update();
+    
 
     //simple wrapping for testing
     if (this.omega.x > window.innerWidth) {

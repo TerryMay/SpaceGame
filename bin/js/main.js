@@ -27394,7 +27394,90 @@ module.exports = function () {
     };
 };
 
-},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BaseProjectile.js":[function(require,module,exports){
+},{"../../Resource":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/Resource.js","../../b64":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/resource-loader/src/b64.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Asteroid.js":[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _pixi = require("pixi.js");
+
+var PIXI = _interopRequireWildcard(_pixi);
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var Asteroid = function (_PIXI$Sprite) {
+  _inherits(Asteroid, _PIXI$Sprite);
+
+  //sizes: 1 - 10
+  function Asteroid() {
+    var size = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 5;
+    var x = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+    var y = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 0;
+    var speed = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
+    var direction = arguments.length > 4 && arguments[4] !== undefined ? arguments[4] : 0;
+
+    _classCallCheck(this, Asteroid);
+
+    var _this = _possibleConstructorReturn(this, (Asteroid.__proto__ || Object.getPrototypeOf(Asteroid)).call(this));
+
+    _this.size = size;
+    return _this;
+  }
+
+  _createClass(Asteroid, [{
+    key: "getRenderer",
+    value: function getRenderer() {
+      var numOfPoints = this.size * 3;
+
+      var count = 1;
+      var center = new PIXI.Point(300, 300);
+      var g = new PIXI.Graphics();
+      var theta = Math.PI * 2 / numOfPoints;
+
+      while (count <= numOfPoints) {
+        console.log(count);
+        var p1 = this.jitter(this.getPointByDegree(center, theta * count, this.size * 10));
+        g.beginFill(0xFF0000);
+        g.drawCircle(p1.x, p1.y, 1);
+        g.endFill();
+        count++;
+      }
+      return g;
+    }
+  }, {
+    key: "getPointByDegree",
+    value: function getPointByDegree(center, angle, radius) {
+      //to Radians
+      //angle = angle * Math.PI / 180;
+      var x = center.x + radius * Math.cos(angle);
+      var y = center.y + radius * Math.sin(angle);
+      return new PIXI.Point(x, y);
+    }
+  }, {
+    key: "jitter",
+    value: function jitter(point) {
+      point.x = point.x + (Math.random() < 0.5 ? -1 : 1) * 10;
+      point.y = point.y + (Math.random() < 0.5 ? -1 : 1) * 10;
+      return point;
+    }
+  }]);
+
+  return Asteroid;
+}(PIXI.Sprite);
+
+exports.default = Asteroid;
+
+},{"pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BaseProjectile.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27500,10 +27583,6 @@ Object.defineProperty(exports, "__esModule", {
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
-var _pixi = require("pixi.js");
-
-var PIXI = _interopRequireWildcard(_pixi);
-
 var _Vector = require("./Vector");
 
 var _Vector2 = _interopRequireDefault(_Vector);
@@ -27517,8 +27596,6 @@ var _BaseProjectile = require("./BaseProjectile");
 var _BaseProjectile2 = _interopRequireDefault(_BaseProjectile);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
@@ -27541,7 +27618,7 @@ var BasicCannon = function () {
 
 exports.default = BasicCannon;
 
-},{"./BaseProjectile":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BaseProjectile.js","./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicTriangle.js":[function(require,module,exports){
+},{"./BaseProjectile":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BaseProjectile.js","./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicTriangle.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -28195,6 +28272,10 @@ var _pixi = require("pixi.js");
 
 var PIXI = _interopRequireWildcard(_pixi);
 
+var _Asteroid = require("./lib/Asteroid");
+
+var _Asteroid2 = _interopRequireDefault(_Asteroid);
+
 var _Omega = require("./lib/Omega");
 
 var _Omega2 = _interopRequireDefault(_Omega);
@@ -28252,6 +28333,8 @@ var Game = function () {
 
     // Base container
     this.stage = new PIXI.Container();
+    var a = new _Asteroid2.default(10, 100, 100, 0, 0);
+    this.stage.addChild(a.getRenderer());
 
     // make a ship with a base engine
     this.omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, this.controls, new _OmegaEngine2.default());
@@ -28321,6 +28404,6 @@ var Game = function () {
   return Game;
 }();
 
-},{"./lib/BasicCannon":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicCannon.js","./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Omega.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
+},{"./lib/Asteroid":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Asteroid.js","./lib/BasicCannon":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicCannon.js","./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Omega.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
 
 //# sourceMappingURL=main.js.map

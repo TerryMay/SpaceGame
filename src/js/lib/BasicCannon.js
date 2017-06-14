@@ -1,4 +1,3 @@
-import * as PIXI from "pixi.js";
 import Vector from "./Vector";
 import Controls from "./Controls";
 import Projectile from "./BaseProjectile";
