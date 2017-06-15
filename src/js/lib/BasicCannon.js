@@ -11,7 +11,8 @@ class BasicCannon {
     return fireButtonObservable
       .flatMap((input) => {
           return Rx.Observable.of(new Projectile());
-      });
+      })
+      .throttle(100);
   }
 }
 

@@ -1,19 +1,22 @@
 import Vector from "./Vector";
+import * as PIXI from "pixi.js";
 
-class BaseProjectile {
+class BaseProjectile extends PIXI.Sprite {
   constructor(x = 0, y = 0, speed = 0, direction = 0) {
+    super();
+    this.id = 0;
     this.position = new Vector(x,y);
     this.velocity = new Vector(0,0);
     this.velocity.setLength(speed);
     this.velocity.setAngle(direction);
-    this.renderCache = null;
-    this.id = 0;
+    this.hasDrawn = false;
+    this.render();
   }
 
   setId(id) {
     this.id = id;
   }
-  
+
   getId() {
     return this.id;
   }
@@ -27,29 +30,27 @@ class BaseProjectile {
     this.velocity.setLength(speed);
     this.velocity.setAngle(direction);
   }
+
   accelerate(accel) {
     this.velocity.addTo(accel);
   }
 
   update() {
     this.position.addTo(this.velocity);
-    this.renderCache.x = this.position.getX();
-    this.renderCache.y = this.position.getY();
+    this.x = this.position.getX();
+    this.y = this.position.getY();
   }
 
-  getRenderer() {
+  render() {
     //override me
-    if (this.renderCache === null) {
+    if (!this.hasDrawn) {
       const projectile = new PIXI.Graphics();
       projectile.beginFill(0xFFFFFF);
-      projectile.drawCircle(0,0,4);
+      projectile.drawCircle(0,0,2);
       projectile.endFill();
-      const container = new PIXI.Sprite();
-      container.anchor.set(.5,.5);
-      container.addChild(projectile);
-      this.renderCache = container;
+      this.addChild(projectile);
     }
-    return this.renderCache; 
+    return this.renderCache;
   }
 }
 

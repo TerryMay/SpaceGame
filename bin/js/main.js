@@ -27407,6 +27407,12 @@ var _pixi = require("pixi.js");
 
 var PIXI = _interopRequireWildcard(_pixi);
 
+var _Vector = require("./Vector");
+
+var _Vector2 = _interopRequireDefault(_Vector);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
 function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
@@ -27420,7 +27426,7 @@ var Asteroid = function (_PIXI$Sprite) {
 
   //sizes: 1 - 10
   function Asteroid() {
-    var size = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 5;
+    var size = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 10;
     var x = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
     var y = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 0;
     var speed = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
@@ -27428,90 +27434,21 @@ var Asteroid = function (_PIXI$Sprite) {
 
     _classCallCheck(this, Asteroid);
 
+    // cap the size at 10
     var _this = _possibleConstructorReturn(this, (Asteroid.__proto__ || Object.getPrototypeOf(Asteroid)).call(this));
 
-    _this.size = size;
+    _this.size = size > 10 ? 10 : size;
+    _this.id = 0;
+    _this.position = new _Vector2.default(x, y);
+    _this.velocity = new _Vector2.default(0, 0);
+    _this.velocity.setLength(speed);
+    _this.velocity.setAngle(direction);
+    _this.hasDrawn = false;
+    _this.render();
     return _this;
   }
 
   _createClass(Asteroid, [{
-    key: "getRenderer",
-    value: function getRenderer() {
-      var numOfPoints = this.size * 3;
-
-      var count = 1;
-      var center = new PIXI.Point(300, 300);
-      var g = new PIXI.Graphics();
-      var theta = Math.PI * 2 / numOfPoints;
-
-      while (count <= numOfPoints) {
-        console.log(count);
-        var p1 = this.jitter(this.getPointByDegree(center, theta * count, this.size * 10));
-        g.beginFill(0xFF0000);
-        g.drawCircle(p1.x, p1.y, 1);
-        g.endFill();
-        count++;
-      }
-      return g;
-    }
-  }, {
-    key: "getPointByDegree",
-    value: function getPointByDegree(center, angle, radius) {
-      //to Radians
-      //angle = angle * Math.PI / 180;
-      var x = center.x + radius * Math.cos(angle);
-      var y = center.y + radius * Math.sin(angle);
-      return new PIXI.Point(x, y);
-    }
-  }, {
-    key: "jitter",
-    value: function jitter(point) {
-      point.x = point.x + (Math.random() < 0.5 ? -1 : 1) * 10;
-      point.y = point.y + (Math.random() < 0.5 ? -1 : 1) * 10;
-      return point;
-    }
-  }]);
-
-  return Asteroid;
-}(PIXI.Sprite);
-
-exports.default = Asteroid;
-
-},{"pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BaseProjectile.js":[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _Vector = require("./Vector");
-
-var _Vector2 = _interopRequireDefault(_Vector);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-var BaseProjectile = function () {
-  function BaseProjectile() {
-    var x = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
-    var y = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
-    var speed = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 0;
-    var direction = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
-
-    _classCallCheck(this, BaseProjectile);
-
-    this.position = new _Vector2.default(x, y);
-    this.velocity = new _Vector2.default(0, 0);
-    this.velocity.setLength(speed);
-    this.velocity.setAngle(direction);
-    this.renderCache = null;
-    this.id = 0;
-  }
-
-  _createClass(BaseProjectile, [{
     key: "setId",
     value: function setId(id) {
       this.id = id;
@@ -27552,29 +27489,170 @@ var BaseProjectile = function () {
       this.renderCache.y = this.position.getY();
     }
   }, {
-    key: "getRenderer",
-    value: function getRenderer() {
+    key: "render",
+    value: function render() {
+      if (!this.hasDrawn) {
+        var numOfPoints = this.size * 3;
+
+        var count = 1;
+        var center = new PIXI.Point(0, 0);
+        this.pivot = center;
+        var g = new PIXI.Graphics();
+        var theta = Math.PI * 2 / numOfPoints;
+        var points = [];
+        while (count <= numOfPoints) {
+          var p1 = this.getPointByDegree(center, theta * count, this.size * 10);
+          p1 = this.jitter(p1, this.size);
+          points.push(p1);
+          count++;
+        }
+
+        // connect the last point of the polygon to the first
+        points.push(new PIXI.Point(points[0].x, points[0].y));
+        //draw
+        g.lineStyle(2, 0xADD8E6);
+        g.drawPolygon(points);
+        this.addChild(g);
+        this.hasDrawn = true;
+      }
+    }
+
+    // should move these to a utility class
+
+  }, {
+    key: "getPointByDegree",
+    value: function getPointByDegree(center, angle, radius) {
+      //to Radians, not needed here but nice to remember
+      //angle = angle * Math.PI / 180;
+      var x = center.x + radius * Math.cos(angle);
+      var y = center.y + radius * Math.sin(angle);
+      return new PIXI.Point(x, y);
+    }
+  }, {
+    key: "jitter",
+    value: function jitter(point, factor) {
+      point.x = point.x + (Math.random() < 0.5 ? -1 : 1) * factor;
+      point.y = point.y + (Math.random() < 0.5 ? -1 : 1) * factor;
+      return point;
+    }
+  }]);
+
+  return Asteroid;
+}(PIXI.Sprite);
+
+exports.default = Asteroid;
+
+},{"./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BaseProjectile.js":[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+var _Vector = require("./Vector");
+
+var _Vector2 = _interopRequireDefault(_Vector);
+
+var _pixi = require("pixi.js");
+
+var PIXI = _interopRequireWildcard(_pixi);
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+var BaseProjectile = function (_PIXI$Sprite) {
+  _inherits(BaseProjectile, _PIXI$Sprite);
+
+  function BaseProjectile() {
+    var x = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
+    var y = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+    var speed = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 0;
+    var direction = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 0;
+
+    _classCallCheck(this, BaseProjectile);
+
+    var _this = _possibleConstructorReturn(this, (BaseProjectile.__proto__ || Object.getPrototypeOf(BaseProjectile)).call(this));
+
+    _this.id = 0;
+    _this.position = new _Vector2.default(x, y);
+    _this.velocity = new _Vector2.default(0, 0);
+    _this.velocity.setLength(speed);
+    _this.velocity.setAngle(direction);
+    _this.hasDrawn = false;
+    _this.render();
+    return _this;
+  }
+
+  _createClass(BaseProjectile, [{
+    key: "setId",
+    value: function setId(id) {
+      this.id = id;
+    }
+  }, {
+    key: "getId",
+    value: function getId() {
+      return this.id;
+    }
+  }, {
+    key: "setPosition",
+    value: function setPosition() {
+      var x = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
+      var y = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+
+      this.position.setX(x);
+      this.position.setY(y);
+    }
+  }, {
+    key: "setVelocity",
+    value: function setVelocity() {
+      var speed = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
+      var direction = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 0;
+
+      this.velocity.setLength(speed);
+      this.velocity.setAngle(direction);
+    }
+  }, {
+    key: "accelerate",
+    value: function accelerate(accel) {
+      this.velocity.addTo(accel);
+    }
+  }, {
+    key: "update",
+    value: function update() {
+      this.position.addTo(this.velocity);
+      this.x = this.position.getX();
+      this.y = this.position.getY();
+    }
+  }, {
+    key: "render",
+    value: function render() {
       //override me
-      if (this.renderCache === null) {
+      if (!this.hasDrawn) {
         var projectile = new PIXI.Graphics();
         projectile.beginFill(0xFFFFFF);
-        projectile.drawCircle(0, 0, 4);
+        projectile.drawCircle(0, 0, 2);
         projectile.endFill();
-        var container = new PIXI.Sprite();
-        container.anchor.set(.5, .5);
-        container.addChild(projectile);
-        this.renderCache = container;
+        this.addChild(projectile);
       }
       return this.renderCache;
     }
   }]);
 
   return BaseProjectile;
-}();
+}(PIXI.Sprite);
 
 exports.default = BaseProjectile;
 
-},{"./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicCannon.js":[function(require,module,exports){
+},{"./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicCannon.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27609,7 +27687,7 @@ var BasicCannon = function () {
     value: function getFireEmitter(fireButtonObservable) {
       return fireButtonObservable.flatMap(function (input) {
         return Rx.Observable.of(new _BaseProjectile2.default());
-      });
+      }).throttle(100);
     }
   }]);
 
@@ -27653,8 +27731,8 @@ var BasicTriangle = function (_PIXI$Graphics) {
 
     var _this = _possibleConstructorReturn(this, (BasicTriangle.__proto__ || Object.getPrototypeOf(BasicTriangle)).call(this));
 
-    _this.thrustOrigin = new PIXI.Point(0, 25);
-    _this.weaponOrigin = new PIXI.Point(50, 25);
+    _this.thrustOrigin = new PIXI.Point(0, 13);
+    _this.weaponOrigin = new PIXI.Point(26, 13);
     _this.thrustRenderer = _this.getBasicThrust;
     return _this;
   }
@@ -27677,10 +27755,10 @@ var BasicTriangle = function (_PIXI$Graphics) {
         case _Omega2.default.HULL_STATE.THRUSTING:
           this.addChild(this.thrustRenderer(this.thrustOrigin));
         case _Omega2.default.HULL_STATE.CLEAN:
-          this.lineStyle(2, 0xFFFFFF, 1);
+          this.lineStyle(2, 0xADD8E6, 1);
           this.moveTo(0, 0);
-          this.lineTo(50, 25);
-          this.lineTo(0, 50);
+          this.lineTo(26, 13);
+          this.lineTo(0, 26);
           this.lineTo(0, 0);
           break;
       }
@@ -27690,7 +27768,7 @@ var BasicTriangle = function (_PIXI$Graphics) {
     value: function getBasicThrust() {
       this.lineStyle(8, 0xFFFFFF, 1);
       this.moveTo(this.thrustOrigin.x, this.thrustOrigin.y);
-      this.lineTo(-(Math.random() * 25), 25);
+      this.lineTo(-(Math.random() * 15), 15);
       return this;
     }
   }]);
@@ -27897,7 +27975,8 @@ var Omega = function (_PIXI$Sprite) {
     get: function get() {
       return {
         CLEAN: 'clean',
-        THRUSTING: 'thrusting'
+        THRUSTING: 'thrusting',
+        FIRING: 'firing'
       };
     }
   }]);
@@ -27919,7 +27998,7 @@ var Omega = function (_PIXI$Sprite) {
     _this.velocity.setLength(0);
     _this.velocity.setAngle(0);
     _this.angle = 0;
-    _this.pivot = new PIXI.Point(25, 25);
+    _this.pivot = new PIXI.Point(13, 13);
     _this.anchor.set(0.5, 0.5);
     _this.engine = engine;
     _this.hull = new _BasicTriangle2.default();
@@ -27948,7 +28027,7 @@ var Omega = function (_PIXI$Sprite) {
       this.weapon = weapon;
       return weapon.getFireEmitter(this.controls.getFireUpObservable()).flatMap(function (projectile) {
         projectile.setPosition(_this3.x, _this3.y);
-        projectile.setVelocity(15, _this3.angle);
+        projectile.setVelocity(10, _this3.angle);
         return Rx.Observable.of(projectile);
       });
     }
@@ -28318,7 +28397,9 @@ var Game = function () {
     _classCallCheck(this, Game);
 
     this.ballisticsMap = {};
+    this.asteroidMap = {};
     this.ballisticsCount = 0;
+    this.asteroidCount = 0;
     // Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
     // if you want to force WebGL
     this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
@@ -28333,15 +28414,17 @@ var Game = function () {
 
     // Base container
     this.stage = new PIXI.Container();
-    var a = new _Asteroid2.default(10, 100, 100, 0, 0);
-    this.stage.addChild(a.getRenderer());
+    var a = this.getAsteroid();
+    this.stage.addChild(a);
 
-    // make a ship with a base engine
+    // make a ship with a base engine & weapon
     this.omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, this.controls, new _OmegaEngine2.default());
     this.omega.setWeapon(new _BasicCannon2.default()).subscribe(function (ammo) {
-      if (ammo !== null) _this.stage.addChild(ammo.getRenderer());
-      ammo.setId(_this.ballisticsCount++);
-      _this.ballisticsMap[ammo.getId()] = ammo;
+      if (ammo !== null) {
+        _this.stage.addChild(ammo);
+        ammo.setId(_this.ballisticsCount++);
+        _this.ballisticsMap[ammo.getId()] = ammo;
+      }
     });
     this.stage.addChild(this.omega);
   }
@@ -28371,16 +28454,22 @@ var Game = function () {
       var ballisticsKeys = Object.keys(this.ballisticsMap);
       if (ballisticsKeys.length > 0) {
         ballisticsKeys.forEach(function (key) {
-          _this2.ballisticsMap[key].update();
-          if (!_this2.checkBounds(_this2.ballisticsMap[key].getRenderer())) {
-            _this2.stage.removeChild(_this2.ballisticsMap[key].getRenderer());
-            delete _this2.ballisticsMap[_this2.ballisticsMap[key].getId()];
+          if (!_this2.checkBounds(_this2.ballisticsMap[key])) {
+            _this2.removeFromStage(_this2.ballisticsMap, key);
+          } else {
+            _this2.ballisticsMap[key].update();
           }
         });
       }
 
       // Request to render at next browser redraw
       requestAnimationFrame(this.animate.bind(this));
+    }
+  }, {
+    key: "removeFromStage",
+    value: function removeFromStage(map, key) {
+      this.stage.removeChild(map[key]);
+      delete map[key];
     }
   }, {
     key: "checkBounds",
@@ -28398,6 +28487,25 @@ var Game = function () {
         return false;
       }
       return true;
+    }
+  }, {
+    key: "getAsteroid",
+    value: function getAsteroid() {
+      var original = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : null;
+
+      if (original !== null) {
+        // take original size and reduce it
+        // carry over position and velo vectors
+        // make random chance to split original into more
+        // make random chance to drop new items
+      } else {
+        // make random starting point that isn't a spawn kill
+        // return full size asteroid
+        var a = new _Asteroid2.default(10, 150, 200, 0, 0);
+        a.setId(this.asteroidCount++);
+        this.asteroidMap[a.getId()] = a;
+        return a;
+      }
     }
   }]);
 

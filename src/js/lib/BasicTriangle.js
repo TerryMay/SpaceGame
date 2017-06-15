@@ -4,8 +4,8 @@ import Omega from "./Omega";
 class BasicTriangle extends PIXI.Graphics {
   constructor() {
     super();
-    this.thrustOrigin = new PIXI.Point(0, 25);
-    this.weaponOrigin = new PIXI.Point(50,25);
+    this.thrustOrigin = new PIXI.Point(0, 13);
+    this.weaponOrigin = new PIXI.Point(26,13);
     this.thrustRenderer = this.getBasicThrust;
   }
 
@@ -23,10 +23,10 @@ class BasicTriangle extends PIXI.Graphics {
       case Omega.HULL_STATE.THRUSTING:
         this.addChild(this.thrustRenderer(this.thrustOrigin));
       case Omega.HULL_STATE.CLEAN:
-        this.lineStyle(2, 0xFFFFFF, 1);
+        this.lineStyle(2, 0xADD8E6, 1);
         this.moveTo(0, 0);
-        this.lineTo(50,25);
-        this.lineTo(0,50);
+        this.lineTo(26,13);
+        this.lineTo(0,26);
         this.lineTo(0,0)
         break;
       }
@@ -35,7 +35,7 @@ class BasicTriangle extends PIXI.Graphics {
   getBasicThrust() {
     this.lineStyle(8, 0xFFFFFF, 1);
     this.moveTo(this.thrustOrigin.x, this.thrustOrigin.y);
-    this.lineTo(-(Math.random()*25), 25);
+    this.lineTo(-(Math.random()*15), 15);
     return this;
   }
 }

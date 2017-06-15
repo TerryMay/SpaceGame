@@ -8,6 +8,7 @@ class Omega extends PIXI.Sprite {
     return {
       CLEAN:'clean',
       THRUSTING:'thrusting',
+      FIRING:'firing',
     };
   };
 
@@ -20,7 +21,7 @@ class Omega extends PIXI.Sprite {
     this.velocity.setLength(0);
     this.velocity.setAngle(0);
     this.angle = 0;
-    this.pivot = new PIXI.Point(25,25);
+    this.pivot = new PIXI.Point(13,13);
     this.anchor.set(0.5, 0.5);
     this.engine = engine;
     this.hull = new TriangleHull();
@@ -43,7 +44,7 @@ class Omega extends PIXI.Sprite {
     return weapon.getFireEmitter(this.controls.getFireUpObservable())
       .flatMap((projectile) => {
         projectile.setPosition(this.x, this.y);
-        projectile.setVelocity(15, this.angle);
+        projectile.setVelocity(10, this.angle);
         return Rx.Observable.of(projectile);
       });
   }

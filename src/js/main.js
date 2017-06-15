@@ -18,7 +18,9 @@ const outerbound = 25;
 class Game {
 	constructor() {
     this.ballisticsMap = {};
+    this.asteroidMap = {};
     this.ballisticsCount = 0;
+    this.asteroidCount = 0;
 		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
 		// if you want to force WebGL
 		this.renderer = PIXI.autoDetectRenderer(
@@ -36,10 +38,10 @@ class Game {
 
 		// Base container
 		this.stage = new PIXI.Container();
-    const a = new Asteroid(10, 100, 100, 0, 0);
-    this.stage.addChild(a.getRenderer());
+    const a = this.getAsteroid();
+    this.stage.addChild(a);
 
-    // make a ship with a base engine
+    // make a ship with a base engine & weapon
     this.omega = new Omega(
       window.innerWidth / 2,
       window.innerHeight / 2,
@@ -47,19 +49,19 @@ class Game {
       new OmegaEngine());
     this.omega.setWeapon(new BasicCannon())
       .subscribe((ammo) => {
-        if(ammo !== null)
-          this.stage.addChild(ammo.getRenderer());
+        if(ammo !== null) {
+          this.stage.addChild(ammo);
           ammo.setId(this.ballisticsCount++);
           this.ballisticsMap[ammo.getId()] = ammo;
+        }
       });
     this.stage.addChild(this.omega);
 	}
 
 	animate() {
-		// Render the scene
+  	// Render the scene
 		this.renderer.render(this.stage);
     this.omega.update();
-    
 
     //simple wrapping for testing
     if (this.omega.x > window.innerWidth) {
@@ -77,10 +79,10 @@ class Game {
     let ballisticsKeys = Object.keys(this.ballisticsMap);
     if (ballisticsKeys.length > 0) {
       ballisticsKeys.forEach((key) => {
-        this.ballisticsMap[key].update();
-        if (!this.checkBounds(this.ballisticsMap[key].getRenderer())) {
-          this.stage.removeChild(this.ballisticsMap[key].getRenderer());
-          delete this.ballisticsMap[this.ballisticsMap[key].getId()];
+        if (!this.checkBounds(this.ballisticsMap[key])) {
+          this.removeFromStage(this.ballisticsMap, key);
+        } else {
+          this.ballisticsMap[key].update();
         }
       });
     }
@@ -88,6 +90,11 @@ class Game {
 		// Request to render at next browser redraw
 		requestAnimationFrame(this.animate.bind(this));
 	}
+
+  removeFromStage(map, key) {
+    this.stage.removeChild(map[key]);
+    delete map[key];
+  }
 
   checkBounds(sprite) {
     //simple wrapping for testing
@@ -103,5 +110,21 @@ class Game {
       return false;
     }
     return true;
+  }
+
+  getAsteroid(original = null) {
+    if (original !== null) {
+      // take original size and reduce it
+      // carry over position and velo vectors
+      // make random chance to split original into more
+      // make random chance to drop new items
+    } else {
+      // make random starting point that isn't a spawn kill
+      // return full size asteroid
+      const a = new Asteroid(10, 150, 200, 0, 0);
+      a.setId(this.asteroidCount++);
+      this.asteroidMap[a.getId()] = a;
+      return a;
+    }
   }
 }
