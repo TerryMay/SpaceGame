@@ -27411,6 +27411,10 @@ var _Vector = require("./Vector");
 
 var _Vector2 = _interopRequireDefault(_Vector);
 
+var _Util = require("./Util");
+
+var _Util2 = _interopRequireDefault(_Util);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
@@ -27439,11 +27443,15 @@ var Asteroid = function (_PIXI$Sprite) {
 
     _this.size = size > 10 ? 10 : size;
     _this.id = 0;
+    _this.wrapsScreenBounds = true;
     _this.position = new _Vector2.default(x, y);
     _this.velocity = new _Vector2.default(0, 0);
     _this.velocity.setLength(speed);
     _this.velocity.setAngle(direction);
     _this.hasDrawn = false;
+
+    _this.rotationIncrement = _Util2.default.randomRange(-.005, .005);
+    console.log(_this.rotationIncrement);
     _this.render();
     return _this;
   }
@@ -27485,8 +27493,9 @@ var Asteroid = function (_PIXI$Sprite) {
     key: "update",
     value: function update() {
       this.position.addTo(this.velocity);
-      this.renderCache.x = this.position.getX();
-      this.renderCache.y = this.position.getY();
+      this.x = this.position.getX();
+      this.y = this.position.getY();
+      this.rotation -= this.rotationIncrement;
     }
   }, {
     key: "render",
@@ -27531,8 +27540,8 @@ var Asteroid = function (_PIXI$Sprite) {
   }, {
     key: "jitter",
     value: function jitter(point, factor) {
-      point.x = point.x + (Math.random() < 0.5 ? -1 : 1) * factor;
-      point.y = point.y + (Math.random() < 0.5 ? -1 : 1) * factor;
+      point.x = point.x + _Util2.default.randomRange(-1, 1) * factor;
+      point.y = point.y + _Util2.default.randomRange(-1, 1) * factor;
       return point;
     }
   }]);
@@ -27542,7 +27551,7 @@ var Asteroid = function (_PIXI$Sprite) {
 
 exports.default = Asteroid;
 
-},{"./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BaseProjectile.js":[function(require,module,exports){
+},{"./Util":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Util.js","./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BaseProjectile.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27583,6 +27592,7 @@ var BaseProjectile = function (_PIXI$Sprite) {
     var _this = _possibleConstructorReturn(this, (BaseProjectile.__proto__ || Object.getPrototypeOf(BaseProjectile)).call(this));
 
     _this.id = 0;
+    _this.wrapsScreenBounds = false;
     _this.position = new _Vector2.default(x, y);
     _this.velocity = new _Vector2.default(0, 0);
     _this.velocity.setLength(speed);
@@ -27687,7 +27697,7 @@ var BasicCannon = function () {
     value: function getFireEmitter(fireButtonObservable) {
       return fireButtonObservable.flatMap(function (input) {
         return Rx.Observable.of(new _BaseProjectile2.default());
-      }).throttle(100);
+      }).throttle(50);
     }
   }]);
 
@@ -27992,6 +28002,7 @@ var Omega = function (_PIXI$Sprite) {
     var _this = _possibleConstructorReturn(this, (Omega.__proto__ || Object.getPrototypeOf(Omega)).call(this));
 
     _this.enabled = false;
+    _this.wrapsScreenBounds = true;
     _this.controls = null;
     _this.position = new _Vector2.default(x, y);
     _this.velocity = new _Vector2.default(0, 0);
@@ -28223,7 +28234,78 @@ var OmegaEngine = function () {
 
 exports.default = OmegaEngine;
 
-},{"./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js":[function(require,module,exports){
+},{"./Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Util.js":[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+	value: true
+});
+
+var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var Util = function () {
+	function Util() {
+		_classCallCheck(this, Util);
+	}
+
+	_createClass(Util, null, [{
+		key: "clamp",
+		value: function clamp(value, min, max) {
+			return Math.min(Math.max(value, Math.min(min, max)), Math.max(min, max));
+		}
+	}, {
+		key: "distance",
+		value: function distance(p0, p1) {
+			var dx = p1.x - p0.x,
+			    dy = p1.y - p0.y;
+			return Math.sqrt(dx * dx + dy * dy);
+		}
+	}, {
+		key: "rectIntersect",
+		value: function rectIntersect(r0, r1) {
+			return Util.rangeIntersect(r0.x, r0.x + r0.width, r1.x, r1.x + r1.width) && Util.rangeIntersect(r0.y, r0.y + r0.height, r1.y, r1.y + r1.height);
+		}
+	}, {
+		key: "degreesToRads",
+		value: function degreesToRads(degrees) {
+			return degrees / 180 * Math.PI;
+		}
+	}, {
+		key: "radsToDegrees",
+		value: function radsToDegrees(radians) {
+			return radians * 180 / Math.PI;
+		}
+	}, {
+		key: "randomRange",
+		value: function randomRange(min, max) {
+			return min + Math.random() * (max - min);
+		}
+	}, {
+		key: "randomInt",
+		value: function randomInt(min, max) {
+			return Math.floor(min + Math.random() * (max - min + 1));
+		}
+	}, {
+		key: "roundToPlaces",
+		value: function roundToPlaces(value, places) {
+			var mult = Math.pow(10, places);
+			return Math.round(value * mult) / mult;
+		}
+	}, {
+		key: "roundNearest",
+		value: function roundNearest(value, nearest) {
+			return Math.round(value / nearest) * nearest;
+		}
+	}]);
+
+	return Util;
+}();
+
+exports.default = Util;
+
+},{}],"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js":[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -28398,8 +28480,11 @@ var Game = function () {
 
     this.ballisticsMap = {};
     this.asteroidMap = {};
+    this.vesselMap = {};
     this.ballisticsCount = 0;
     this.asteroidCount = 0;
+    this.vesselCount = 0;
+
     // Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
     // if you want to force WebGL
     this.renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight);
@@ -28414,56 +28499,53 @@ var Game = function () {
 
     // Base container
     this.stage = new PIXI.Container();
-    var a = this.getAsteroid();
-    this.stage.addChild(a);
-
     // make a ship with a base engine & weapon
-    this.omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, this.controls, new _OmegaEngine2.default());
-    this.omega.setWeapon(new _BasicCannon2.default()).subscribe(function (ammo) {
+    var omega = new _Omega2.default(window.innerWidth / 2, window.innerHeight / 2, this.controls, new _OmegaEngine2.default());
+    omega.setWeapon(new _BasicCannon2.default()).subscribe(function (ammo) {
       if (ammo !== null) {
         _this.stage.addChild(ammo);
         ammo.setId(_this.ballisticsCount++);
         _this.ballisticsMap[ammo.getId()] = ammo;
       }
     });
-    this.stage.addChild(this.omega);
+    this.addToStage(this.vesselMap, this.vesselCount++, omega);
+    this.addToStage(this.asteroidMap, this.asteroidCount++, new _Asteroid2.default(10, 100, 200, .5, -80));
+    this.addToStage(this.asteroidMap, this.asteroidCount++, new _Asteroid2.default(10, window.innerWidth - 100, window.innerHeight - 100, .5, 80));
   }
 
   _createClass(Game, [{
     key: "animate",
     value: function animate() {
-      var _this2 = this;
-
       // Render the scene
       this.renderer.render(this.stage);
-      this.omega.update();
 
-      //simple wrapping for testing
-      if (this.omega.x > window.innerWidth) {
-        this.omega.x = 0;
-      } else if (this.omega.x < -1) {
-        this.omega.x = window.innerWidth;
-      }
+      this.updateGameObjectMap(this.vesselMap);
+      this.updateGameObjectMap(this.ballisticsMap);
+      this.updateGameObjectMap(this.asteroidMap);
+      // Request to render at next browser redraw
+      requestAnimationFrame(this.animate.bind(this));
+    }
+  }, {
+    key: "updateGameObjectMap",
+    value: function updateGameObjectMap(map) {
+      var _this2 = this;
 
-      if (this.omega.y > window.innerHeight) {
-        this.omega.y = 0;
-      } else if (this.omega.y < -1) {
-        this.omega.y = window.innerHeight;
-      }
-
-      var ballisticsKeys = Object.keys(this.ballisticsMap);
-      if (ballisticsKeys.length > 0) {
-        ballisticsKeys.forEach(function (key) {
-          if (!_this2.checkBounds(_this2.ballisticsMap[key])) {
-            _this2.removeFromStage(_this2.ballisticsMap, key);
+      var keys = Object.keys(map);
+      if (keys.length > 0) {
+        keys.forEach(function (key) {
+          if (!_this2.checkBounds(map[key]) && !map[key].wrapsScreenBounds) {
+            _this2.removeFromStage(map, key);
           } else {
-            _this2.ballisticsMap[key].update();
+            map[key].update();
           }
         });
       }
-
-      // Request to render at next browser redraw
-      requestAnimationFrame(this.animate.bind(this));
+    }
+  }, {
+    key: "addToStage",
+    value: function addToStage(map, key, myGameSprite) {
+      map[key] = myGameSprite;
+      this.stage.addChild(myGameSprite);
     }
   }, {
     key: "removeFromStage",
@@ -28473,17 +28555,21 @@ var Game = function () {
     }
   }, {
     key: "checkBounds",
-    value: function checkBounds(sprite) {
+    value: function checkBounds(myGameSprite) {
       //simple wrapping for testing
-      if (sprite.x > window.innerWidth + outerbound) {
+      if (myGameSprite.x > window.innerWidth + outerbound) {
+        if (myGameSprite.wrapsScreenBounds) myGameSprite.x = 0;
         return false;
-      } else if (sprite.x < -outerbound) {
+      } else if (myGameSprite.x < -outerbound) {
+        if (myGameSprite.wrapsScreenBounds) myGameSprite.x = window.innerWidth;
         return false;
       }
 
-      if (sprite.y > window.innerHeight + outerbound) {
+      if (myGameSprite.y > window.innerHeight + outerbound) {
+        if (myGameSprite.wrapsScreenBounds) myGameSprite.y = 0;
         return false;
-      } else if (sprite.y < -outerbound) {
+      } else if (myGameSprite.y < -outerbound) {
+        if (myGameSprite.wrapsScreenBounds) myGameSprite.y = window.innerHeight;
         return false;
       }
       return true;
@@ -28500,11 +28586,9 @@ var Game = function () {
         // make random chance to drop new items
       } else {
         // make random starting point that isn't a spawn kill
-        // return full size asteroid
-        var a = new _Asteroid2.default(10, 150, 200, 0, 0);
-        a.setId(this.asteroidCount++);
-        this.asteroidMap[a.getId()] = a;
-        return a;
+        // return full size 
+
+        return new _Asteroid2.default(10, 150, 200, .5, -80);
       }
     }
   }]);

@@ -15,6 +15,7 @@ class Omega extends PIXI.Sprite {
   constructor(x = 0, y = 0, controls, engine) {
     super();
     this.enabled = false;
+    this.wrapsScreenBounds = true;
     this.controls = null;
     this.position = new Vector(x,y);
     this.velocity = new Vector(0,0);

@@ -5,6 +5,7 @@ class BaseProjectile extends PIXI.Sprite {
   constructor(x = 0, y = 0, speed = 0, direction = 0) {
     super();
     this.id = 0;
+    this.wrapsScreenBounds = false;
     this.position = new Vector(x,y);
     this.velocity = new Vector(0,0);
     this.velocity.setLength(speed);
@@ -26,7 +27,7 @@ class BaseProjectile extends PIXI.Sprite {
     this.position.setY(y);
   }
 
-  setVelocity(speed =0, direction = 0) {
+  setVelocity(speed = 0, direction = 0) {
     this.velocity.setLength(speed);
     this.velocity.setAngle(direction);
   }

@@ -19,8 +19,11 @@ class Game {
 	constructor() {
     this.ballisticsMap = {};
     this.asteroidMap = {};
+    this.vesselMap = {};
     this.ballisticsCount = 0;
     this.asteroidCount = 0;
+    this.vesselCount = 0;
+
 		// Change this to `this.renderer = new PIXI.WebGLRenderer(width, height)`
 		// if you want to force WebGL
 		this.renderer = PIXI.autoDetectRenderer(
@@ -38,16 +41,13 @@ class Game {
 
 		// Base container
 		this.stage = new PIXI.Container();
-    const a = this.getAsteroid();
-    this.stage.addChild(a);
-
     // make a ship with a base engine & weapon
-    this.omega = new Omega(
+    const omega = new Omega(
       window.innerWidth / 2,
       window.innerHeight / 2,
       this.controls,
       new OmegaEngine());
-    this.omega.setWeapon(new BasicCannon())
+    omega.setWeapon(new BasicCannon())
       .subscribe((ammo) => {
         if(ammo !== null) {
           this.stage.addChild(ammo);
@@ -55,58 +55,66 @@ class Game {
           this.ballisticsMap[ammo.getId()] = ammo;
         }
       });
-    this.stage.addChild(this.omega);
+    this.addToStage(this.vesselMap, this.vesselCount++, omega);
+    this.addToStage(this.asteroidMap, this.asteroidCount++,
+      new Asteroid(10, 100, 200, .5, -80));
+    this.addToStage(this.asteroidMap, this.asteroidCount++,
+      new Asteroid(10, window.innerWidth - 100, window.innerHeight - 100, .5, 80));
 	}
 
 	animate() {
   	// Render the scene
 		this.renderer.render(this.stage);
-    this.omega.update();
 
-    //simple wrapping for testing
-    if (this.omega.x > window.innerWidth) {
-      this.omega.x = 0;
-    } else if ( this.omega.x < -1) {
-      this.omega.x = window.innerWidth;
-    }
-
-    if (this.omega.y > window.innerHeight) {
-      this.omega.y = 0;
-    } else if (this.omega.y < -1) {
-      this.omega.y = window.innerHeight;
-    }
-
-    let ballisticsKeys = Object.keys(this.ballisticsMap);
-    if (ballisticsKeys.length > 0) {
-      ballisticsKeys.forEach((key) => {
-        if (!this.checkBounds(this.ballisticsMap[key])) {
-          this.removeFromStage(this.ballisticsMap, key);
-        } else {
-          this.ballisticsMap[key].update();
-        }
-      });
-    }
-   
+    this.updateGameObjectMap(this.vesselMap);
+    this.updateGameObjectMap(this.ballisticsMap);
+    this.updateGameObjectMap(this.asteroidMap);
 		// Request to render at next browser redraw
 		requestAnimationFrame(this.animate.bind(this));
 	}
+
+  updateGameObjectMap(map) {
+    const keys = Object.keys(map);
+    if (keys.length > 0) {
+      keys.forEach((key) => {
+        if (!this.checkBounds(map[key]) && !map[key].wrapsScreenBounds) {
+          this.removeFromStage(map, key);
+        } else {
+          map[key].update();
+        }
+      });
+    }
+  }
+
+  addToStage(map, key, myGameSprite) {
+    map[key] = myGameSprite;
+    this.stage.addChild(myGameSprite);
+  }
 
   removeFromStage(map, key) {
     this.stage.removeChild(map[key]);
     delete map[key];
   }
 
-  checkBounds(sprite) {
+  checkBounds(myGameSprite) {
     //simple wrapping for testing
-    if (sprite.x > window.innerWidth + outerbound) {
+    if (myGameSprite.x > window.innerWidth + outerbound) {
+      if (myGameSprite.wrapsScreenBounds)
+        myGameSprite.x = 0;
       return false;
-    } else if ( sprite.x < -outerbound) {
+    } else if ( myGameSprite.x < -outerbound) {
+      if(myGameSprite.wrapsScreenBounds)
+        myGameSprite.x = window.innerWidth;
       return false;
     }
 
-    if (sprite.y > window.innerHeight + outerbound) {
+    if (myGameSprite.y > window.innerHeight + outerbound) {
+        if(myGameSprite.wrapsScreenBounds)
+          myGameSprite.y = 0;
       return false;
-    } else if (sprite.y < -outerbound) {
+    } else if (myGameSprite.y < -outerbound) {
+        if(myGameSprite.wrapsScreenBounds)
+          myGameSprite.y = window.innerHeight;
       return false;
     }
     return true;
@@ -120,11 +128,9 @@ class Game {
       // make random chance to drop new items
     } else {
       // make random starting point that isn't a spawn kill
-      // return full size asteroid
-      const a = new Asteroid(10, 150, 200, 0, 0);
-      a.setId(this.asteroidCount++);
-      this.asteroidMap[a.getId()] = a;
-      return a;
+      // return full size 
+      
+      return new Asteroid(10, 150, 200, .5, -80);
     }
   }
 }

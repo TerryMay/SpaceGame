@@ -12,7 +12,7 @@ class BasicCannon {
       .flatMap((input) => {
           return Rx.Observable.of(new Projectile());
       })
-      .throttle(100);
+      .throttle(50);
   }
 }
 

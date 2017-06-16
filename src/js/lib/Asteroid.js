@@ -1,5 +1,6 @@
 import * as PIXI from "pixi.js";
 import Vector from "./Vector";
+import Util from "./Util";
 
 class Asteroid extends PIXI.Sprite {
   //sizes: 1 - 10
@@ -8,11 +9,15 @@ class Asteroid extends PIXI.Sprite {
     // cap the size at 10
     this.size = (size > 10) ? 10 : size;
     this.id = 0;
+    this.wrapsScreenBounds = true;
     this.position = new Vector(x,y);
     this.velocity = new Vector(0,0);
     this.velocity.setLength(speed);
     this.velocity.setAngle(direction);
     this.hasDrawn = false;
+    
+    this.rotationIncrement = Util.randomRange(-.005, .005);
+    console.log(this.rotationIncrement);
     this.render();
   }
 
@@ -40,9 +45,10 @@ class Asteroid extends PIXI.Sprite {
 
   update() {
     this.position.addTo(this.velocity);
-    this.renderCache.x = this.position.getX();
-    this.renderCache.y = this.position.getY();
-  }
+    this.x = this.position.getX();
+    this.y = this.position.getY();
+    this.rotation -= this.rotationIncrement;
+   }
 
   render() {
     if (!this.hasDrawn) {
@@ -81,8 +87,8 @@ class Asteroid extends PIXI.Sprite {
   }
 
   jitter(point, factor) {
-    point.x = point.x + (Math.random() < 0.5 ? -1 : 1) * factor;
-    point.y = point.y + (Math.random() < 0.5 ? -1 : 1) * factor;
+    point.x = point.x + Util.randomRange(-1,1) * factor;
+    point.y = point.y + Util.randomRange(-1,1) * factor;
     return point;
   }
 }
