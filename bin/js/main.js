@@ -27540,8 +27540,8 @@ var Asteroid = function (_PIXI$Sprite) {
   }, {
     key: "jitter",
     value: function jitter(point, factor) {
-      point.x = point.x + _Util2.default.randomRange(-1, 1) * factor;
-      point.y = point.y + _Util2.default.randomRange(-1, 1) * factor;
+      point.x = point.x + _Util2.default.randomRange(-1, 2) * factor;
+      point.y = point.y + _Util2.default.randomRange(-2, 1) * factor;
       return point;
     }
   }]);
@@ -28510,7 +28510,7 @@ var Game = function () {
     });
     this.addToStage(this.vesselMap, this.vesselCount++, omega);
     this.addToStage(this.asteroidMap, this.asteroidCount++, new _Asteroid2.default(10, 100, 200, .5, -80));
-    this.addToStage(this.asteroidMap, this.asteroidCount++, new _Asteroid2.default(10, window.innerWidth - 100, window.innerHeight - 100, .5, 80));
+    this.addToStage(this.asteroidMap, this.asteroidCount++, new _Asteroid2.default(9, window.innerWidth - 100, window.innerHeight - 100, .5, 80));
   }
 
   _createClass(Game, [{

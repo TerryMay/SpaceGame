@@ -59,7 +59,7 @@ class Game {
     this.addToStage(this.asteroidMap, this.asteroidCount++,
       new Asteroid(10, 100, 200, .5, -80));
     this.addToStage(this.asteroidMap, this.asteroidCount++,
-      new Asteroid(10, window.innerWidth - 100, window.innerHeight - 100, .5, 80));
+      new Asteroid(9, window.innerWidth - 100, window.innerHeight - 100, .5, 80));
 	}
 
 	animate() {

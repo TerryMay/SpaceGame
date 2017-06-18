@@ -87,8 +87,8 @@ class Asteroid extends PIXI.Sprite {
   }
 
   jitter(point, factor) {
-    point.x = point.x + Util.randomRange(-1,1) * factor;
-    point.y = point.y + Util.randomRange(-1,1) * factor;
+    point.x = point.x + Util.randomRange(-1,2) * factor;
+    point.y = point.y + Util.randomRange(-2,1) * factor;
     return point;
   }
 }
