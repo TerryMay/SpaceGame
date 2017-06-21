@@ -10,21 +10,30 @@ class Util {
 		return Math.sqrt(dx * dx + dy * dy);
 	}
 
+  static distanceXY(x0, y0, x1, y1) {
+		var dx = x1 - x0,
+			dy = y1 - y0;
+		return Math.sqrt(dx * dx + dy * dy);
+	}
 
-	circleCollision(c0, c1) {
+	static circleCollision(c0, c1) {
 		return utils.distance(c0, c1) <= c0.radius + c1.radius;
 	}
 
-	circlePointCollision(x, y, circle) {
-		return utils.distanceXY(x, y, circle.x, circle.y) < circle.radius;
+	// circlePointCollision(x, y, circle) {
+	// 	return utils.distanceXY(x, y, circle.x, circle.y) < circle.radius;
+	// }
+
+	static circlePointCollision(x, y, circleX, circleY, circleRadius) {
+		return Util.distanceXY(x, y, circleX, circleY) < circleRadius;
 	}
 
-	pointInRect(x, y, rect) {
-		return utils.inRange(x, rect.x, rect.x + rect.width) &&
-		       utils.inRange(y, rect.y, rect.y + rect.height);
+	static pointInRect(x, y, rect) {
+		return Util.inRange(x, rect.x, rect.x + rect.width) &&
+		       Util.inRange(y, rect.y, rect.y + rect.height);
 	}
 
-	inRange(value, min, max) {
+	static inRange(value, min, max) {
 		return value >= Math.min(min, max) && value <= Math.max(min, max);
 	}
 

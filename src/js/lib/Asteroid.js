@@ -61,7 +61,7 @@ class Asteroid extends PIXI.Sprite {
       const theta = ((Math.PI*2) / numOfPoints);
       const points = [];
       while(count <= numOfPoints) {
-        let p1 = this.getPointByDegree(center, theta*count, this.size*10);
+        let p1 = this.getPointByDegree(center, theta*count, this.getRadius());
         p1 = this.jitter(p1, this.size);
         points.push(p1);
         count ++;
@@ -75,6 +75,14 @@ class Asteroid extends PIXI.Sprite {
       this.addChild(g);
       this.hasDrawn = true;
     }
+  }
+
+  getSize() {
+    return this.size;
+  }
+  
+  getRadius() {
+    return this.size*10;
   }
 
   // should move these to a utility class

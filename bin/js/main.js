@@ -27510,7 +27510,7 @@ var Asteroid = function (_PIXI$Sprite) {
         var theta = Math.PI * 2 / numOfPoints;
         var points = [];
         while (count <= numOfPoints) {
-          var p1 = this.getPointByDegree(center, theta * count, this.size * 10);
+          var p1 = this.getPointByDegree(center, theta * count, this.getRadius());
           p1 = this.jitter(p1, this.size);
           points.push(p1);
           count++;
@@ -27524,6 +27524,16 @@ var Asteroid = function (_PIXI$Sprite) {
         this.addChild(g);
         this.hasDrawn = true;
       }
+    }
+  }, {
+    key: "getSize",
+    value: function getSize() {
+      return this.size;
+    }
+  }, {
+    key: "getRadius",
+    value: function getRadius() {
+      return this.size * 10;
     }
 
     // should move these to a utility class
@@ -28250,27 +28260,7 @@ var Util = function () {
 		_classCallCheck(this, Util);
 	}
 
-	_createClass(Util, [{
-		key: "circleCollision",
-		value: function circleCollision(c0, c1) {
-			return utils.distance(c0, c1) <= c0.radius + c1.radius;
-		}
-	}, {
-		key: "circlePointCollision",
-		value: function circlePointCollision(x, y, circle) {
-			return utils.distanceXY(x, y, circle.x, circle.y) < circle.radius;
-		}
-	}, {
-		key: "pointInRect",
-		value: function pointInRect(x, y, rect) {
-			return utils.inRange(x, rect.x, rect.x + rect.width) && utils.inRange(y, rect.y, rect.y + rect.height);
-		}
-	}, {
-		key: "inRange",
-		value: function inRange(value, min, max) {
-			return value >= Math.min(min, max) && value <= Math.max(min, max);
-		}
-	}], [{
+	_createClass(Util, null, [{
 		key: "clamp",
 		value: function clamp(value, min, max) {
 			return Math.min(Math.max(value, Math.min(min, max)), Math.max(min, max));
@@ -28281,6 +28271,38 @@ var Util = function () {
 			var dx = p1.x - p0.x,
 			    dy = p1.y - p0.y;
 			return Math.sqrt(dx * dx + dy * dy);
+		}
+	}, {
+		key: "distanceXY",
+		value: function distanceXY(x0, y0, x1, y1) {
+			var dx = x1 - x0,
+			    dy = y1 - y0;
+			return Math.sqrt(dx * dx + dy * dy);
+		}
+	}, {
+		key: "circleCollision",
+		value: function circleCollision(c0, c1) {
+			return utils.distance(c0, c1) <= c0.radius + c1.radius;
+		}
+
+		// circlePointCollision(x, y, circle) {
+		// 	return utils.distanceXY(x, y, circle.x, circle.y) < circle.radius;
+		// }
+
+	}, {
+		key: "circlePointCollision",
+		value: function circlePointCollision(x, y, circleX, circleY, circleRadius) {
+			return Util.distanceXY(x, y, circleX, circleY) < circleRadius;
+		}
+	}, {
+		key: "pointInRect",
+		value: function pointInRect(x, y, rect) {
+			return Util.inRange(x, rect.x, rect.x + rect.width) && Util.inRange(y, rect.y, rect.y + rect.height);
+		}
+	}, {
+		key: "inRange",
+		value: function inRange(value, min, max) {
+			return value >= Math.min(min, max) && value <= Math.max(min, max);
 		}
 	}, {
 		key: "rectIntersect",
@@ -28533,14 +28555,16 @@ var Game = function () {
         _this.ballisticsMap[ammo.getId()] = ammo;
       }
     });
-    this.addToStage(this.vesselMap, this.vesselCount++, omega);
-    this.addToStage(this.asteroidMap, this.asteroidCount++, new _Asteroid2.default(10, 100, 200, .5, -80));
-    this.addToStage(this.asteroidMap, this.asteroidCount++, new _Asteroid2.default(9, window.innerWidth - 100, window.innerHeight - 100, .5, 80));
+    this.addToStage(this.vesselMap, +new Date(), omega);
+    this.addToStage(this.asteroidMap, +new Date(), new _Asteroid2.default(10, 100, 200, .5, -80));
+    this.addToStage(this.asteroidMap, +new Date(), new _Asteroid2.default(9, window.innerWidth - 100, window.innerHeight - 100, .5, 80));
   }
 
   _createClass(Game, [{
     key: "animate",
     value: function animate() {
+      var _this2 = this;
+
       // Render the scene
       this.renderer.render(this.stage);
 
@@ -28548,17 +28572,32 @@ var Game = function () {
       this.updateGameObjectMap(this.ballisticsMap);
       this.updateGameObjectMap(this.asteroidMap);
 
+      this.ballisticsMap.forEach(function (ammo, bKey) {
+        _this2.asteroidMap.forEach(function (asteroid, aKey) {
+          if (_Util2.default.circlePointCollision(ammo.x, ammo.y, asteroid.x, asteroid.y, asteroid.getRadius())) {
+            if (asteroid.getSize() > 1) {
+              _this2.removeFromStage(_this2.ballisticsMap, bKey);
+              var smaller = new _Asteroid2.default(asteroid.getSize() - 1);
+              smaller.position = asteroid.position;
+              smaller.velocity = asteroid.velocity;
+              smaller.velocity.setAngle(ammo.velocity.getAngle());
+              _this2.addToStage(_this2.asteroidMap, _this2.asteroidCount++, smaller);
+            }
+            _this2.removeFromStage(_this2.asteroidMap, aKey);
+          }
+        });
+      });
       // Request to render at next browser redraw
       requestAnimationFrame(this.animate.bind(this));
     }
   }, {
     key: "updateGameObjectMap",
     value: function updateGameObjectMap(map) {
-      var _this2 = this;
+      var _this3 = this;
 
       map.forEach(function (value, key) {
-        if (!_this2.checkBounds(value) && !value.wrapsScreenBounds) {
-          _this2.removeFromStage(map, key);
+        if (!_this3.checkBounds(value) && !value.wrapsScreenBounds) {
+          _this3.removeFromStage(map, key);
         } else {
           value.update();
         }
@@ -28573,7 +28612,7 @@ var Game = function () {
   }, {
     key: "removeFromStage",
     value: function removeFromStage(map, key) {
-      this.stage.removeChild(map[key]);
+      this.stage.removeChild(map.get(key));
       map.delete(key);
     }
   }, {

@@ -57,10 +57,10 @@ class Game {
           this.ballisticsMap[ammo.getId()] = ammo;
         }
       });
-    this.addToStage(this.vesselMap, this.vesselCount++, omega);
-    this.addToStage(this.asteroidMap, this.asteroidCount++,
+    this.addToStage(this.vesselMap, +new Date(), omega);
+    this.addToStage(this.asteroidMap, +new Date(),
       new Asteroid(10, 100, 200, .5, -80));
-    this.addToStage(this.asteroidMap, this.asteroidCount++,
+    this.addToStage(this.asteroidMap, +new Date(),
       new Asteroid(9, window.innerWidth - 100, window.innerHeight - 100, .5, 80));
 	}
 
@@ -71,8 +71,23 @@ class Game {
     this.updateGameObjectMap(this.vesselMap);
     this.updateGameObjectMap(this.ballisticsMap);
     this.updateGameObjectMap(this.asteroidMap);
-    
 
+    this.ballisticsMap.forEach((ammo, bKey) => {
+      this.asteroidMap.forEach((asteroid, aKey) => {
+        if (Util.circlePointCollision(ammo.x, ammo.y, asteroid.x, asteroid.y, asteroid.getRadius())) {
+          if (asteroid.getSize() > 1) {
+            this.removeFromStage(this.ballisticsMap, bKey);
+            const smaller = new Asteroid(asteroid.getSize()-1);
+            smaller.position = asteroid.position;
+            smaller.velocity = asteroid.velocity;
+            smaller.velocity.setAngle(ammo.velocity.getAngle());
+            this.addToStage(this.asteroidMap, this.asteroidCount++,
+              smaller);
+          }
+          this.removeFromStage(this.asteroidMap, aKey); 
+        }
+      });
+    });
 		// Request to render at next browser redraw
 		requestAnimationFrame(this.animate.bind(this));
 	}
@@ -93,7 +108,7 @@ class Game {
   }
 
   removeFromStage(map, key) {
-    this.stage.removeChild(map[key]);
+    this.stage.removeChild(map.get(key));
     map.delete(key);
   }
 
