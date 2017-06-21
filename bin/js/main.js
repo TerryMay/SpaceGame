@@ -28250,7 +28250,27 @@ var Util = function () {
 		_classCallCheck(this, Util);
 	}
 
-	_createClass(Util, null, [{
+	_createClass(Util, [{
+		key: "circleCollision",
+		value: function circleCollision(c0, c1) {
+			return utils.distance(c0, c1) <= c0.radius + c1.radius;
+		}
+	}, {
+		key: "circlePointCollision",
+		value: function circlePointCollision(x, y, circle) {
+			return utils.distanceXY(x, y, circle.x, circle.y) < circle.radius;
+		}
+	}, {
+		key: "pointInRect",
+		value: function pointInRect(x, y, rect) {
+			return utils.inRange(x, rect.x, rect.x + rect.width) && utils.inRange(y, rect.y, rect.y + rect.height);
+		}
+	}, {
+		key: "inRange",
+		value: function inRange(value, min, max) {
+			return value >= Math.min(min, max) && value <= Math.max(min, max);
+		}
+	}], [{
 		key: "clamp",
 		value: function clamp(value, min, max) {
 			return Math.min(Math.max(value, Math.min(min, max)), Math.max(min, max));
@@ -28453,6 +28473,10 @@ var _Controls = require("./lib/Controls");
 
 var _Controls2 = _interopRequireDefault(_Controls);
 
+var _Util = require("./lib/Util");
+
+var _Util2 = _interopRequireDefault(_Util);
+
 var _Vector = require("./lib/Vector");
 
 var _Vector2 = _interopRequireDefault(_Vector);
@@ -28478,9 +28502,9 @@ var Game = function () {
 
     _classCallCheck(this, Game);
 
-    this.ballisticsMap = {};
-    this.asteroidMap = {};
-    this.vesselMap = {};
+    this.ballisticsMap = new Map();
+    this.asteroidMap = new Map();
+    this.vesselMap = new Map();
     this.ballisticsCount = 0;
     this.asteroidCount = 0;
     this.vesselCount = 0;
@@ -28505,6 +28529,7 @@ var Game = function () {
       if (ammo !== null) {
         _this.stage.addChild(ammo);
         ammo.setId(_this.ballisticsCount++);
+        _this.ballisticsMap.set(_this.ballisticsCount++, ammo);
         _this.ballisticsMap[ammo.getId()] = ammo;
       }
     });
@@ -28522,6 +28547,7 @@ var Game = function () {
       this.updateGameObjectMap(this.vesselMap);
       this.updateGameObjectMap(this.ballisticsMap);
       this.updateGameObjectMap(this.asteroidMap);
+
       // Request to render at next browser redraw
       requestAnimationFrame(this.animate.bind(this));
     }
@@ -28530,28 +28556,25 @@ var Game = function () {
     value: function updateGameObjectMap(map) {
       var _this2 = this;
 
-      var keys = Object.keys(map);
-      if (keys.length > 0) {
-        keys.forEach(function (key) {
-          if (!_this2.checkBounds(map[key]) && !map[key].wrapsScreenBounds) {
-            _this2.removeFromStage(map, key);
-          } else {
-            map[key].update();
-          }
-        });
-      }
+      map.forEach(function (value, key) {
+        if (!_this2.checkBounds(value) && !value.wrapsScreenBounds) {
+          _this2.removeFromStage(map, key);
+        } else {
+          value.update();
+        }
+      });
     }
   }, {
     key: "addToStage",
     value: function addToStage(map, key, myGameSprite) {
-      map[key] = myGameSprite;
+      map.set(key, myGameSprite);
       this.stage.addChild(myGameSprite);
     }
   }, {
     key: "removeFromStage",
     value: function removeFromStage(map, key) {
       this.stage.removeChild(map[key]);
-      delete map[key];
+      map.delete(key);
     }
   }, {
     key: "checkBounds",
@@ -28596,6 +28619,6 @@ var Game = function () {
   return Game;
 }();
 
-},{"./lib/Asteroid":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Asteroid.js","./lib/BasicCannon":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicCannon.js","./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Omega.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
+},{"./lib/Asteroid":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Asteroid.js","./lib/BasicCannon":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/BasicCannon.js","./lib/Controls":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Controls.js","./lib/Omega":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Omega.js","./lib/OmegaEngine":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/OmegaEngine.js","./lib/Util":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Util.js","./lib/Vector":"/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/lib/Vector.js","pixi.js":"/Users/TerryMay/Study/pixi/pixi-boilerplate/node_modules/pixi.js/src/index.js"}]},{},["/Users/TerryMay/Study/pixi/pixi-boilerplate/src/js/main.js"])
 
 //# sourceMappingURL=main.js.map

@@ -4,6 +4,7 @@ import Omega from "./lib/Omega";
 import OmegaEngine from "./lib/OmegaEngine";
 import BasicCannon from "./lib/BasicCannon";
 import Controls from "./lib/Controls";
+import Util from "./lib/Util";
 import Vector from "./lib/Vector";
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -17,9 +18,9 @@ const outerbound = 25;
 
 class Game {
 	constructor() {
-    this.ballisticsMap = {};
-    this.asteroidMap = {};
-    this.vesselMap = {};
+    this.ballisticsMap = new Map();
+    this.asteroidMap = new Map();
+    this.vesselMap = new Map();
     this.ballisticsCount = 0;
     this.asteroidCount = 0;
     this.vesselCount = 0;
@@ -52,6 +53,7 @@ class Game {
         if(ammo !== null) {
           this.stage.addChild(ammo);
           ammo.setId(this.ballisticsCount++);
+          this.ballisticsMap.set(this.ballisticsCount++, ammo);
           this.ballisticsMap[ammo.getId()] = ammo;
         }
       });
@@ -69,31 +71,30 @@ class Game {
     this.updateGameObjectMap(this.vesselMap);
     this.updateGameObjectMap(this.ballisticsMap);
     this.updateGameObjectMap(this.asteroidMap);
+    
+
 		// Request to render at next browser redraw
 		requestAnimationFrame(this.animate.bind(this));
 	}
 
   updateGameObjectMap(map) {
-    const keys = Object.keys(map);
-    if (keys.length > 0) {
-      keys.forEach((key) => {
-        if (!this.checkBounds(map[key]) && !map[key].wrapsScreenBounds) {
+    map.forEach((value, key) => {
+      if (!this.checkBounds(value) && !value.wrapsScreenBounds) {
           this.removeFromStage(map, key);
         } else {
-          map[key].update();
+          value.update();
         }
-      });
-    }
+    });
   }
 
   addToStage(map, key, myGameSprite) {
-    map[key] = myGameSprite;
+    map.set(key, myGameSprite);
     this.stage.addChild(myGameSprite);
   }
 
   removeFromStage(map, key) {
     this.stage.removeChild(map[key]);
-    delete map[key];
+    map.delete(key);
   }
 
   checkBounds(myGameSprite) {
